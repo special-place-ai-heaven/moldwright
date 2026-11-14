@@ -188,7 +188,7 @@ export function factoryScene(t: number, now: number): FactoryFrame {
         const via = (...xs: string[]) => xs.filter((x, i) => i === 0 || x !== xs[i - 1])
         if (t >= job.end) {
             slotState.set(job.issue, { issue: job.issue, state: job.outcome, arriving: 1 })
-            if (job.outcome === 'merged') { counts.merged++; merged.push({ label: `#${job.issue} ${job.title}`, count: 1, at: now - (t - job.end) }) }
+            if (job.outcome === 'merged') { counts.merged++; merged.push({ label: `#${job.issue} ${job.title}`, count: 1, at: Math.round(now - t) + job.end }) }
             else rejects++
             continue
         }

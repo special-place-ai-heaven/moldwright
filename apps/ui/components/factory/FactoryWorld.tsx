@@ -1,7 +1,7 @@
 'use client'
 
 import { IsoGrid, frameTemplateBoard, useRenderedFrame, type Tile } from '@rerun/ui/iso-grid'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { fireRerunConfetti } from '@/lib/confetti'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -14,6 +14,26 @@ const OVERHEAD_PX = 120
 const BAR_PX = 110
 
 const TICK_MS = 250
+
+// The board re-renders only when what it draws changes: a value keeps its identity until its content
+// does. The scene is rebuilt every tick, but tiles and links change only when a task changes stage.
+function useStable<T>(value: T): T {
+    const key = JSON.stringify(value)
+    const held = useRef({ key, value })
+    if (held.current.key !== key) held.current = { key, value }
+    return held.current.value
+}
+
+// The moving parts keep a clock of their own, so the spheres glide while the board stays still.
+function LiveOverlay({ start, tiles }: { start: number; tiles: Tile[] }) {
+    const [now, setNow] = useState(() => Date.now())
+    useEffect(() => {
+        const id = setInterval(() => setNow(Date.now()), TICK_MS)
+        return () => clearInterval(id)
+    }, [])
+    const frame = factoryScene((now - start) % LOOP_MS, now)
+    return <FactoryOverlay tiles={tiles} pods={frame.pods} cabinets={frame.cabinets} rejects={frame.rejects} held={frame.held} />
+}
 
 // The factory, drawn by the board's own world. The world takes the whole stage; a thin glass bar
 // carries the gauges and the counts, and a band drops in while sending is held.
@@ -28,7 +48,11 @@ export function FactoryWorld({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
     const t = (clock.now - clock.start) % LOOP_MS
     const frame = useMemo(() => factoryScene(t, clock.now), [t, clock.now])
     // Two bubbles at most, the newest: more read as noise.
-    const toasts = frame.toasts.filter(toast => !expired.has(toast.id)).slice(-2)
+    const toasts = useStable(frame.toasts.filter(toast => !expired.has(toast.id)).slice(-2))
+    const tiles = useStable(frame.tiles)
+    const links = useStable(frame.links)
+    const onToastExpire = useCallback((id: string) => setExpired(prev => new Set(prev).add(id)), [])
+    const worldOverlay = useCallback(() => <LiveOverlay start={clock.start} tiles={tiles} />, [clock.start, tiles])
 
     // A feature whose cabinet fills throws the app's own confetti; a single merge has its own shake.
     const fullCabinets = frame.cabinets.filter(c => c.slots.every(s => s.state !== 'empty')).length
@@ -45,8 +69,11 @@ export function FactoryWorld({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
         { id: `${c.id}-c`, position: { col: c.col_end, row: c.row_start }, span: 1, style: { color: '' } },
         { id: `${c.id}-d`, position: { col: c.col_start, row: c.row_end }, span: 1, style: { color: '' } },
     ] as Tile[]), [frame.containers])
-    const camera = size ? frameTemplateBoard(corners, { width: size.width, height: size.height - OVERHEAD_PX - BAR_PX }, 2, 0.94) : null
-    if (camera) camera.pan = { x: camera.pan.x, y: camera.pan.y + (OVERHEAD_PX - BAR_PX) / 2 / camera.zoom }
+    const camera = useMemo(() => {
+        if (!size) return null
+        const c = frameTemplateBoard(corners, { width: size.width, height: size.height - OVERHEAD_PX - BAR_PX }, 2, 0.94)
+        return { zoom: c.zoom, pan: { x: c.pan.x, y: c.pan.y + (OVERHEAD_PX - BAR_PX) / 2 / c.zoom } }
+    }, [size, corners])
 
     const signInMin = Math.max(0, 412 - Math.floor((clock.now - clock.start) / 60_000))
     // shortcut: the run measures are sample numbers that grow with the loop; the page reads the
@@ -70,17 +97,17 @@ export function FactoryWorld({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
     return (
         <div ref={ref} className={`${theme} relative h-dvh w-full overflow-hidden bg-background text-foreground`}>
             <IsoGrid
-                tiles={frame.tiles}
+                tiles={tiles}
                 containers={frame.containers}
-                liveLinks={frame.links}
+                liveLinks={links}
                 toasts={toasts}
-                onToastExpire={id => setExpired(prev => new Set(prev).add(id))}
+                onToastExpire={onToastExpire}
                 camera={camera}
                 cameraTransitionMs={0}
                 showLinks
                 selectedTileId={null}
                 scrollGestures
-                worldOverlay={() => <FactoryOverlay tiles={frame.tiles} pods={frame.pods} cabinets={frame.cabinets} rejects={frame.rejects} held={frame.held} />}
+                worldOverlay={worldOverlay}
             />
 
             <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-5">
