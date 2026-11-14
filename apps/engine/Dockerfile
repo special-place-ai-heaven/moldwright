@@ -2,7 +2,7 @@
 # Built from the repository root: docker build -f apps/engine/Dockerfile .
 # Debian 13 (glibc 2.41): tools a coworker installs into /data, such as symforge or coding-supervisor,
 # ship Linux builds that need glibc 2.38 or newer, which Debian 12 lacks.
-FROM node:22-trixie-slim AS base
+FROM node:26-trixie-slim AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /app
