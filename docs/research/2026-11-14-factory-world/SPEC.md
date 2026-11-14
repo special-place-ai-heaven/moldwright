@@ -1,102 +1,112 @@
 # The factory world: design spec
-as_of 2026-11-14. Status: DRAFT, the owner's direction written down before the build. Dark by default.
-Supersedes `docs/research/2026-11-14-factory-view/DESIGN.md` except its section 5 (what the app can read).
+as_of 2026-11-14. Status: APPROVED LOOK (owner: "Looks nice" on the production line), build not cut yet.
+Supersedes `docs/research/2026-11-14-factory-view/DESIGN.md` except its section 5 (what the app could read).
+Prototype: `apps/ui/components/factory/` on sample data; the belt and trace lines in `packages/ui/src/iso-grid`.
 
-The factory is a chip fab, not a board of cards. Owner: "Have you seen how silicon chip waffers are made and
-chips are produced? Where they travel in these crate packets on lines", "silicon waffers are tasks, that get
-transported to those cabinets and put in there like vinyl records".
-
-Everything in it is a finite, known thing: a feature is cut into a known number of tasks, each task passes
-known stages, so every count on the floor is exact and every motion says something true. Nothing moves for
-decoration. Built in Rerun's own isometric engine (`packages/ui/src/iso-grid`), extended with new objects;
-real WebGL (`THREE-D.md`) only if a slice there cannot carry glass and light convincingly.
+The factory is a production line in Rerun's own isometric world, dark by default. Everything on it is a
+finite, known thing: a feature is cut into a known number of tasks, each task passes known stages, so every
+level on the floor is exact and every motion says something true. Nothing moves for decoration.
 
 ## 1. Objects
 
 | Object | What it is | How it looks |
 |---|---|---|
-| **Coworker = tool** | a Rerun coworker (`code`, LINUS, Boss...) | Rerun's rounded buddy with its face, 2x2, alive: bob, blink, squash. It is the tool a wafer is processed at. |
-| **Copy** | one more run of the same coworker at once | the same buddy, glassy and see-through, budding out of its coworker and melting back |
-| **Overhead rail** | the path work takes between coworkers | a rail of light joining coworkers (the fab's overhead transport); current runs along it both ways |
-| **Pod** | the carrier a task rides in | a small glassy pod (the fab's wafer carrier) hanging from the rail, gliding between tools; it opens at a tool and closes to travel |
-| **Wafer = task** | one job: an issue cut for the factory | a thin glowing disc inside the pod. Its surface is a grid of dies that light up as the task passes its steps, so its progress is counted, not guessed. |
-| **Cabinet = feature** | the parent issue a task was cut from | a tall cabinet with one slot per task of the feature (the count is known from the cut). A finished wafer slides into its slot like a record into a sleeve; the cabinet is complete when every slot is filled. |
-| **Foreman's post** | Boss, who plans and cuts | Boss's buddy on a raised post over the floor; talking to him opens his chat (Rerun's coworker chat) |
-| **Delegator = loader** | the dispatcher that sends and merges | a machine at the head of the line: loads wafers into pods, sends them out, seals the merge |
-| **Checks gate** | the workflow runs of a pull request | an arch over the rail with one light per check |
-| **Gauges** | plan week, sign-in | physical: a reservoir that drains as the week is used, a lamp that dims as the sign-in ages |
+| **Coworker** | a Rerun coworker (`code`, LINUS, the loader...) | Rerun's 2x2 buddy with its face: bob, blink, squash |
+| **Copy** | one more run of the same coworker at once | the same buddy, see-through, joined to its coworker by a thin trace |
+| **Belt** | a path work takes between coworkers | link variant `belt`: a dark band on the floor, slats running, a neon edge in the status colour of what is on it, a slow trace along its middle |
+| **Trace** | a light connection (main to copy, studio) | link variant `trace`: a thin see-through line, a neon head travelling end to end, the line behind it lit and fading |
+| **Task sphere** | one job (an issue cut for the factory) | a glass sphere riding the belts, filling like a liquid in its status colour; `#issue` and its percentage under it |
+| **Scanner gate** | a review | an X-ray gate standing on the belt: the sphere waits inside while a line of light sweeps it; green and on, or red, a shake, and turned aside |
+| **Reject bin** | where defects end | an open bin of dark red glass beside the scanners, the rejected spheres heaped in it, its count on the rim |
+| **Feature sphere** | a feature (the parent issue a task was cut from) | a large glass sphere in Stock, one mark per task; merged tasks fill it gold, rejected ones settle red at the bottom; empty space is the exact work left; it glows when full |
+| **Loader** | the dispatcher | a buddy at the head of the line; queued spheres wait on its belt; it carries the merged count |
 
-## 2. What lights up, and from what
+## 2. What fills, and from what
 
-- **A wafer's dies** light by stage and by step. Stages from the ledger (`jobs.state`, `transitions`): queued,
-  building, review, checks, merged. Inside a stage, steps of the run (`fires.steps`, the step count the
-  delegator already reads) light dies in that stage's band, so a wafer in a long build visibly advances. A wafer
-  is complete when its last die lights at the merge.
-- **A cabinet** has one slot per task of its feature. Filled slots show how each task ended: a lit wafer
-  (merged), a dark one (rejected), a cracked one (blocked, failed, returned). Empty slots are the exact work left.
-- **Die colour** is the coworker type that lit it (build, review, checks), so a wafer is a record of who
-  worked it.
+- **A task sphere** fills by stage: build up to 40%, review to 70%, checks to 95%, merged full. Inside a
+  stage it creeps by the run's steps (`fires.steps`) against the usual length of that stage, never past the
+  stage's cap. A fix round takes it back to its builder and it creeps 50 to 60%.
+- **A feature sphere's** level is ended tasks over all tasks of the feature (merged gold, rejected red).
+  The count of tasks comes from the cut, so it needs the parent link (section 6).
+- **A belt's edge** is the colour of what rides on it; a quiet belt keeps the board's blue-white.
 
-## 3. Statuses and their tells
+Colours: queued `#8ea2ff`, building `#f5a524`, review `#2dd4a3`, fixing `#fb923c`, checks `#6ea8ff`,
+merged `#ffe08a`, rejected and held `#ef4444` / `#f87171`.
 
-Every status has its own tell, by shape and motion as well as colour. "Ledger" says whether the delegator
-records it today (`tools/factory/store.py` `JOB_STATES`, `holds.py`, `fires`).
+## 3. Every state and its tell
 
-| Status | Ledger | Tell |
+Every state has a tell by shape and motion as well as colour. "Ledger" is `tools/factory/store.py`
+`JOB_STATES`, `holds.py`, `fires`.
+
+| State | Ledger | Tell |
 |---|---|---|
-| waiting on a task | `waiting` | pod parked on a siding, a thin light thread to the wafer it waits on |
-| queued | `queued` | pod in line at the loader, steps forward as the line moves |
-| held | yes (`holds.py`) | rails dim, pods stop where they are, a barrier of light drops at the head, a padlock on the loader |
-| building | `building` | pod docked and open at a copy; the copy works over the wafer, dies light one by one |
-| review wait | `review_wait` | pod queued in front of the reviewer, closed |
-| reviewing | `reviewing` | reviewer's eyes scan; a sweep of light passes across the wafer |
-| fix wait / fixing | `fix_wait`, `fixing` | pod rides the return rail; a scratch on the wafer glows and heals as the fix runs |
-| checks | `checks` | under the gate; one light per check comes on in order |
-| merged | `merged` | last die lights, the wafer shakes gently, the pod carries it to its cabinet, it slides into its slot |
-| rejected | `rejected` | the wafer dims and goes into its slot dark |
-| blocked | `blocked` | pod stops, one sharp shake, a diamond badge with the reason in a bubble; it stays until someone acts |
-| failed / returned | `failed`, `returned` | a crack across the wafer, one shake; into its slot cracked |
-| stalled | from `fires` (step count not moving past the clock) | the copy holding it slows and greys; a clock badge |
-| over budget | from `fires` (tokens past the cap) | the wafer overheats, glowing red at the edge; the copy shudders |
-| replaced | **needs dispatcher work** (no state) | the wafer dissolves into light that flows into its replacement |
-| cancelled | **needs dispatcher work** (no state) | the pod lifts off the rail and fades |
-| delegator not answering | heartbeat file | the whole floor dims, motion freezes, a clock shows the last beat |
-
-**Feature link: needs dispatcher work.** The ledger has no task-to-feature link; the cut names its parent only
-in prose ("Part of #198"). The cut format gets a `**Part of**: #n` line, read like `**Depends on**`, and the
-ledger keeps it; until then a cabinet's slot count is not exact.
+| waiting on a task | `waiting` | sphere parked at the loader, empty, dimmed, with a thin thread of light to the sphere it waits on |
+| queued | `queued` | sphere in line on the loader's belt; the line closes up as the front one leaves |
+| held | `holds.py` | every belt edge turns red and its slats stop; waiting spheres get a red rim; a band shows the time left; the loader shows a padlock |
+| building | `building` | sphere settled on the trace between `code` and the copy building it; the copy bobs; amber liquid rises |
+| review wait | `review_wait` | sphere queued on the belt in front of the scanners, lid dark |
+| reviewing | `reviewing` | inside a scanner gate; the scan line sweeps; green liquid rises |
+| fix wait | `fix_wait` | sphere turned aside by a red gate, parked at the scanner with an orange rim |
+| fixing | `fixing` | sphere rides the orange belt back to its builder; orange liquid rises |
+| checks | `checks` | sphere on the belt back to the loader, blue liquid, the belt edge blue |
+| merged | `merged` | sphere full, a gentle shake, rides gold to its feature sphere and pours in |
+| rejected | `rejected` | red gate and a shake; the sphere rides to the reject bin and lands on the heap |
+| blocked | `blocked` | sphere stops where it is, one sharp shake, a diamond badge and the reason in a bubble; stays until someone acts |
+| failed / returned | `failed`, `returned` | a crack across the sphere, one shake, its liquid drains to grey; it goes to the reject bin |
+| stalled | `fires` (steps not moving past the clock) | the copy holding it greys and slows; a clock badge on the sphere |
+| over budget | `fires` (tokens past the cap) | the sphere glows red at the rim and the copy shudders |
+| delegator not answering | heartbeat older than two beats | the floor dims, every slat and trace stops, a clock shows the last beat |
 
 ## 4. The motion language
 
-Refined: data flows on rails both ways; each change of status has its own tell (start = a squash and a light,
+Refined: data flows on the lines; each change of state has its own tell (start = a squash and a light,
 finish = a pulse that settles, error = one shake, waiting on a person = a slow breath, hold = dim and lock);
-small hints sit where the change happened; glows fade, never blink; idle things stay quietly alive.
+hints sit where the change happened; glows fade, never blink; idle things stay quietly alive.
 
-Cheap, never: everything moving on one beat; spinners and loops that mean nothing; colour as the only
-signal; shaking what is not wrong; pop-ins with no easing; piled bubbles; motion that fights a drag or a click;
+Cheap, never: everything moving on one beat; loops that mean nothing; colour as the only signal; shaking what
+is not wrong; pop-ins with no easing; piled bubbles (two at most); motion that fights a drag or a click;
 layout jumping when data refreshes.
 
-Timings and easings: MOTION.md (R1 hop, R2 landing, R3 copy ripple, R4 shadow, R7 handoff comet, R9 spring).
-Pods ride the cable's own path (OPEN-SOURCE.md items 1 to 3: an upright parcel on `offset-path`, one id per
-job so it travels instead of reappearing, a queue that backs up). Live data is played one beat behind and
-smoothed (AI Town).
+Recipes and their sources: MOTION.md (hop, landing, copy ripple, handoff), PACKETS.md (tapered comet that
+bends at corners, a queue that backs up with minimum spacing, a squash at corners, the plain route for slot
+positions), OPEN-SOURCE.md (one id per job so a task travels; play live data one beat behind, AI Town).
+Two traps PACKETS.md measured: a per-route `linear()` easing works only on two-keyframe animations, and
+nothing that rides `offset-path` may carry its own scale or translate.
 
 ## 5. Around the floor (Rerun parts, repurposed)
 
 - **Foreman chat:** Rerun's coworker chat (`components/chat/AgentChat.tsx`) for Boss, in the shell of the
   foreman column (`components/foreman/ForemanColumn.tsx`), restyled to the factory.
 - **Bot panel:** clicking a coworker opens Rerun's side panel (`components/agent/AgentPanel.tsx`): chat, runs,
-  schedules, model, effort, skills, tools, services.
-- **KPIs:** Rerun's monitoring cards and charts (`packages/ui/src/monitoring`, `AgentPanelMonitoring.tsx`),
-  summed across the factory's coworkers; per task: tokens, duration, fix rounds (`fires`).
-- **Construction view:** the row of cabinets is the overview; a cabinet opens its wafers.
+  schedules, model, effort, skills, tools, services. Missing in Rerun: pausing a coworker by hand.
+- **KPIs:** the bar of `factory-metrics.ts` (Rerun's own run measures, the job counts, plan and sign-in),
+  and Rerun's monitoring cards and charts (`packages/ui/src/monitoring`) summed across the factory coworkers.
 - **Settings:** Rerun's dialog pattern (`PanelEditorShell`, `Segmented`, `Switch`) over the delegator's
-  settings: pools, runs per coworker, clocks, holds. Needs a read and write path to the delegator (gap).
+  settings: pools, runs per coworker, clocks, holds. Needs a write path to the delegator (later).
 
-## 6. Open
+## 6. Where the data comes from
 
-- The data path from the delegator's ledger to the app does not exist yet; every number waits on it.
-- Pausing a coworker by hand does not exist in Rerun (gap found in the map of the app).
-- Eyes that look around on a board: Rerun turns them off when many buddies share a board (`styles.css`,
-  "twenty buddies glancing at once is noise"). Proposed: a per-task eye motion (scan while reviewing, look
-  down while building) instead of free glancing. The owner decides.
+**Push.** On every beat the delegator sends one snapshot of the line to the app through the account tool
+server it already calls with its own key; the app keeps the latest snapshot per workspace and the factory
+page reads it behind sign-in. Chosen because the delegator is deliberately closed (no published ports, no
+other networks, no host paths but its read-only tools mount), its ledger is SQLite in WAL mode (not read
+cleanly through a read-only mount), and the app has no SQLite reader.
+
+- **One value, replaced each beat,** with the time it was made; "not answering" is a snapshot older than two
+  beats.
+- **Never stops a beat:** its own try, a short timeout, an unknown-tool answer logged once.
+- **Trust:** the schema lives in `packages/contracts` with a size cap; the snapshot is keyed by the calling
+  key's workspace, never global; the read is behind sign-in; BRUCE reviews the new write before it merges.
+- **Carries:** every job with its state, when it entered it, coworker and copy, run steps and tokens
+  (`fires`), PR and fix round; the holds with their end time; the pools and runs per coworker; the beat
+  number; the repository; each job's parent feature (nullable until the link below exists).
+
+**Parent link: needs dispatcher work.** The ledger has no task-to-feature link; the cut names its parent in
+prose ("Part of #198"). The cut format gets a `**Part of**: #n` line, read like `**Depends on**`.
+
+## 7. Open
+
+- Eyes that look around on a board: Rerun turns them off with many buddies. Proposed: a per-task eye motion
+  (scan while reviewing, look down while building). The owner decides.
+- Frame cost: slats and trace layers animate dash offset (a repaint per frame); `offset-distance` runs on the
+  main thread in Chrome (PACKETS.md). Measure with a full floor before shipping.
