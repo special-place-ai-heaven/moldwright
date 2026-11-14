@@ -1,12 +1,17 @@
 'use client'
 
-import { IsoGrid } from '@rerun/ui/iso-grid'
+import { IsoGrid, frameTemplateBoard, useRenderedFrame, type Tile } from '@rerun/ui/iso-grid'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { fireRerunConfetti } from '@/lib/confetti'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { METRICS, type MetricDef, type MetricKey, type MetricValues } from './factory-metrics'
+import { FactoryOverlay } from './FactoryOverlay'
 import { LOOP_MS, factoryScene } from './factory-scene'
+
+// The rails and cabinets stand above the floor, so the camera frames the Boxes with headroom above them.
+const OVERHEAD_PX = 120
+const BAR_PX = 110
 
 const TICK_MS = 250
 
@@ -25,12 +30,23 @@ export function FactoryWorld({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
     // Two bubbles at most, the newest: more read as noise.
     const toasts = frame.toasts.filter(toast => !expired.has(toast.id)).slice(-2)
 
-    // A merge throws the app's own confetti.
-    const merged = useRef(frame.counts.merged)
+    // A feature whose cabinet fills throws the app's own confetti; a single merge has its own shake.
+    const fullCabinets = frame.cabinets.filter(c => c.slots.every(s => s.state !== 'empty')).length
+    const full = useRef(fullCabinets)
     useEffect(() => {
-        if (frame.counts.merged > merged.current) void fireRerunConfetti()
-        merged.current = frame.counts.merged
-    }, [frame.counts.merged])
+        if (fullCabinets > full.current) void fireRerunConfetti()
+        full.current = fullCabinets
+    }, [fullCabinets])
+
+    const { ref, frame: size } = useRenderedFrame()
+    const corners = useMemo(() => frame.containers.flatMap(c => [
+        { id: `${c.id}-a`, position: { col: c.col_start, row: c.row_start }, span: 1, style: { color: '' } },
+        { id: `${c.id}-b`, position: { col: c.col_end, row: c.row_end }, span: 1, style: { color: '' } },
+        { id: `${c.id}-c`, position: { col: c.col_end, row: c.row_start }, span: 1, style: { color: '' } },
+        { id: `${c.id}-d`, position: { col: c.col_start, row: c.row_end }, span: 1, style: { color: '' } },
+    ] as Tile[]), [frame.containers])
+    const camera = size ? frameTemplateBoard(corners, { width: size.width, height: size.height - OVERHEAD_PX - BAR_PX }, 2, 0.94) : null
+    if (camera) camera.pan = { x: camera.pan.x, y: camera.pan.y + (OVERHEAD_PX - BAR_PX) / 2 / camera.zoom }
 
     const signInMin = Math.max(0, 412 - Math.floor((clock.now - clock.start) / 60_000))
     // shortcut: the run measures are sample numbers that grow with the loop; the page reads the
@@ -52,17 +68,19 @@ export function FactoryWorld({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
     }
 
     return (
-        <div className={`${theme} relative h-dvh w-full overflow-hidden bg-background text-foreground`}>
+        <div ref={ref} className={`${theme} relative h-dvh w-full overflow-hidden bg-background text-foreground`}>
             <IsoGrid
                 tiles={frame.tiles}
                 containers={frame.containers}
                 liveLinks={frame.links}
                 toasts={toasts}
                 onToastExpire={id => setExpired(prev => new Set(prev).add(id))}
-                fitToContent
+                camera={camera}
+                cameraTransitionMs={0}
                 showLinks
                 selectedTileId={null}
                 scrollGestures
+                worldOverlay={() => <FactoryOverlay tiles={frame.tiles} pods={frame.pods} cabinets={frame.cabinets} rejects={frame.rejects} held={frame.held} />}
             />
 
             <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-5">
