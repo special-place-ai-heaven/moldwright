@@ -142,12 +142,12 @@ function traceTiming(id: string) {
     return { period, travelRatio: travel / period, phase: hashUnit(id, 6) * period }
 }
 
-// The lit line behind a trace's head, as stacked strokes that grow fainter the further back they
-// reach: a fade along a bent path, which a gradient cannot follow.
 // A belt's band and its slats, in world px: wide enough to carry the factory's spheres.
 const BELT_WIDTH = 13
 const BELT_SLATS = '1.4 6'
 
+// The lit line behind a trace's head, as stacked strokes that grow fainter the further back they
+// reach: a fade along a bent path, which a gradient cannot follow.
 const TRACE_TRAIL = [
     { share: 0.12, opacity: 0.85, width: 1.5 },
     { share: 0.3, opacity: 0.32, width: 1.2 },
@@ -302,7 +302,8 @@ export const TileLinks = memo(function TileLinks({ tiles, liveLinks, containers,
                                             strokeLinecap="round"
                                             strokeLinejoin="round"
                                             strokeDasharray={`${lit} ${length + lit}`}
-                                            style={{ opacity: layer.opacity, ['--iso-trace-from' as string]: `${lit}`, ['--iso-trace-to' as string]: `${lit - length}`, ...timing }}
+                                            strokeOpacity={layer.opacity}
+                                            style={{ ['--iso-trace-from' as string]: `${lit}`, ['--iso-trace-to' as string]: `${lit - length}`, ...timing }}
                                         />
                                     )
                                 })}
@@ -422,19 +423,23 @@ export const TileLinks = memo(function TileLinks({ tiles, liveLinks, containers,
                     {traces.map(({ link, points }) => {
                         const { period, travelRatio, phase } = traceTiming(link.id)
                         const at = (travelRatio * 100).toFixed(1)
+                        const color = link.color ?? (link.source.containerId ? containerColorById.get(link.source.containerId) : undefined) ?? DEFAULT_COLOR
+                        const dim = link.source.dimmed || link.target.dimmed
+                        // The head's own opacity belongs to its rest animation: dimming goes on a wrapper,
+                        // as it does for the cable comet.
                         return (
+                            <div key={link.key} style={{ opacity: dim ? ISO_DIM_OPACITY : undefined, transition: `opacity ${ISO_DIM_MS}ms ease` }}>
                             <div
-                                key={link.key}
                                 className="iso-trace-head"
                                 style={{
-                                    ['--iso-trace-color' as string]: link.color ?? DEFAULT_COLOR,
+                                    ['--iso-trace-color' as string]: color,
                                     offsetPath: `path("${points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}")`,
                                     animationDuration: `${period.toFixed(2)}s`,
                                     animationDelay: `-${phase.toFixed(2)}s`,
                                     animationTimingFunction: `linear(0 0%, 1 ${at}%, 1 100%), linear(0 0%, 0 ${at}%, 1 ${at}%, 1 100%)`,
-                                    opacity: link.source.dimmed || link.target.dimmed ? ISO_DIM_OPACITY : undefined,
                                 }}
                             />
+                            </div>
                         )
                     })}
                 </div>

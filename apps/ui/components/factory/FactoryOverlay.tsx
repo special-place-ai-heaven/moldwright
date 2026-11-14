@@ -1,9 +1,10 @@
 'use client'
 
-// The fab's moving parts, drawn in the board's world through IsoGrid's worldOverlay: wafers riding
-// Rerun's own light lines on the floor (the same route TileLinks draws, so a wafer sits on its
-// line), and the slot racks standing on the cabinet tiles. Motion is CSS, so the board's pause
-// (`data-iso-paused`) and reduced motion stop it with the rest of the world.
+// The factory's moving parts, drawn in the board's world through IsoGrid's worldOverlay: task spheres
+// riding the belts (the same route TileLinks draws, so a sphere sits on its belt), the scanner gates of
+// review, the reject bin and the feature spheres. The spheres move on the scene's clock with a short
+// transition between ticks; the slosh, shakes and glows are CSS. Under reduced motion the transitions
+// and loops stop and the spheres step from place to place.
 
 import { GRID_SIZE, TILE_H, TILE_W, isoPosition, type Tile } from '@rerun/ui/iso-grid'
 
@@ -290,4 +291,7 @@ const FAB_CSS = `
 @keyframes fab-reject { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 50% { transform: translateX(3px); } 75% { transform: translateX(-2px); } }
 @keyframes fab-glow { 0%, 100% { opacity: .8; } 50% { opacity: 1; } }
 [data-iso-paused] .fab-layer *, [data-iso-paused] .fab-layer *::after { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) {
+  .fab-orb-pos, .fab-liquid, .fab-feature-fill, .fab-feature-surface, .fab-feature-glow { transition: none !important; }
+}
 `

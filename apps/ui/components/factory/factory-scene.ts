@@ -1,10 +1,10 @@
-// The factory as a chip fab staged on a Rerun board (docs/research/2026-11-14-factory-world/SPEC.md).
-// Coworkers are the board's 2x2 buddies and are the tools; a copy is the same buddy, see-through.
-// A task is a wafer riding in a glass pod along overhead rails of light; its dies light up as it is
-// worked; when its last die lights it shakes, rides to its feature's cabinet and slides into a slot.
-// Boxes keep the board's measures (8 high, a cell apart; places five cells apart).
+// The factory as a production line on a Rerun board (docs/research/2026-11-14-factory-world/SPEC.md).
+// Coworkers are the board's 2x2 buddies; a copy is the same buddy, see-through. A task is a glass sphere
+// riding the belts between them and filling with its progress; a review is a scanner gate that passes
+// it on, sends it back for a fix, or turns a defect into the reject bin; a finished task pours into its
+// feature's sphere. Boxes keep the board's measures (8 high, a cell apart; places five cells apart).
 // `factoryScene(t)` is a pure function of the time in the loop.
-// shortcut: the jobs are a fixed sample loop; the real page feeds the delegator's ledger instead.
+// shortcut: the jobs are a fixed sample loop; the real page feeds the delegator's snapshot instead.
 
 import { agentTileStyle, type BuddyLook, type Container, type Tile, type TileLink, type TileResultItem, type TileToast } from '@rerun/ui/iso-grid'
 
@@ -123,20 +123,18 @@ function plan(): Job[] {
 }
 export const JOBS = plan()
 
-// A wafer rides Rerun's own light lines on the floor, from tile to tile: `path` is the tile ids it
-// passes, `travel` how far along it is. A queued wafer waits on the loader's line at `queue`.
+// A task sphere rides the belts on the floor, from tile to tile: `path` is the tile ids it passes,
+// `travel` how far along it is. A queued sphere waits on the loader's belt at `queue`.
 export type DieBand = 'build' | 'review' | 'checks' | 'merge'
 export type PodView = {
     id: string; issue: number; title: string
     path: string[]; travel: number; queue: number
-    dies: number // lit dies out of DIES
     level: number // 0..1, how full the task's sphere is
     band: DieBand // who is lighting them now
     state: 'queued' | 'held' | 'working' | 'fixing' | 'checks' | 'complete' | 'rejected'
     verdict?: 'pass' | 'fail' // set while the scanner shows it, at the end of a review
     scan: number // 0..1 through a review, for the scanner's sweep
 }
-export const DIES = 16
 // Status colours, shared by the lines and the spheres.
 export const STATUS_COLOR = { queued: '#8ea2ff', held: '#ef4444', build: '#f5a524', review: '#2dd4a3', fixing: '#fb923c', checks: '#6ea8ff', complete: '#ffe08a', rejected: '#f87171' } as const
 export type SlotView = { issue: number; state: 'empty' | 'merged' | 'rejected'; arriving: number } // arriving: 0..1 while sliding in
@@ -200,7 +198,7 @@ export function factoryScene(t: number, now: number): FactoryFrame {
         const prev = job.legs[legIndex - 1]
         const ride = (t - leg.from) / (TRANSIT_MS * 1.6)
         const pod = (path: string[], travel: number, band: DieBand, state: PodView['state'], extra: Partial<PodView> = {}) =>
-            pods.push({ id: `pod-${job.issue}`, issue: job.issue, title: job.title, path, travel: ease(clamp(travel)), queue: 0, dies: Math.round(level * DIES), level, band, state, scan: 0, ...extra })
+            pods.push({ id: `pod-${job.issue}`, issue: job.issue, title: job.title, path, travel: ease(clamp(travel)), queue: 0, level, band, state, scan: 0, ...extra })
         counts.runs += leg.kind === 'queued' ? 0 : 1
 
         if (leg.kind === 'queued') {
@@ -280,8 +278,7 @@ export function factoryScene(t: number, now: number): FactoryFrame {
     tiles.push(loader)
     if (held) toast(HOLD.from + 300, 'Delegator', 'Loader', 'Sending held: sign-in renewal. Running builds finish.')
 
-    // The lines: Rerun's own cables, a thin see-through line of light with a neon comet running end to
-    // end, join the loader, `code`, LINUS and the cabinets.
+    // The belts join the loader, `code`, LINUS, the reject bin and the feature spheres.
     const lines: [string, string][] = [['Delegator', 'code'], ['code', 'LINUS'], ['LINUS', 'Delegator'], ['code', 'LARRY'], ['LINUS', 'BRUCE'], ['LINUS', 'rejects'], ...FEATURES.map(f => ['Delegator', `cab-${f.issue}`] as [string, string])]
     // A line glows in the colour of what runs on it: build amber, review green, checks blue, a merge
     // gold, a held line red; a quiet line keeps the board's own blue-white.

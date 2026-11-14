@@ -48,7 +48,9 @@ export function FactoryWorld({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
     const t = (clock.now - clock.start) % LOOP_MS
     const frame = useMemo(() => factoryScene(t, clock.now), [t, clock.now])
     // Two bubbles at most, the newest: more read as noise.
-    const toasts = useStable(frame.toasts.filter(toast => !expired.has(toast.id)).slice(-2))
+    // A toast's id carries the loop's number, so the same moment in the next loop is a new toast.
+    const loop = Math.floor((clock.now - clock.start) / LOOP_MS)
+    const toasts = useStable(frame.toasts.map(toast => ({ ...toast, id: `${toast.id}#${loop}` })).filter(toast => !expired.has(toast.id)).slice(-2))
     const tiles = useStable(frame.tiles)
     const links = useStable(frame.links)
     const onToastExpire = useCallback((id: string) => setExpired(prev => new Set(prev).add(id)), [])
@@ -86,7 +88,7 @@ export function FactoryWorld({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
         checks: { text: String(frame.counts.checks) },
         shipped: { text: String(frame.counts.merged) },
         runs: { text: String(runs) },
-        totalTokens: { text: `${((runs * 0.31) / 1).toFixed(1)}M` },
+        totalTokens: { text: `${(runs * 0.31).toFixed(1)}M` },
         cachedShare: { text: '87%', fill: 87 },
         avgDuration: { text: '2m 41s' },
         errorRate: { text: '1.7%' },

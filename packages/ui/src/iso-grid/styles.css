@@ -481,7 +481,7 @@
     .iso-cable-comet { display: block; }
 }
 
-/* ===== Trace des liens « trace » (TileLinks) ===== */
+/* ===== Links « trace » and « belt » (TileLinks) ===== */
 
 /* The lit line behind the head: a dash whose end moves from the start of the path to its end. */
 @keyframes iso-trace-run {
