@@ -8,15 +8,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { METRICS, type MetricDef, type MetricKey, type MetricValues } from './factory-metrics'
 import { LOOP_MS, factoryScene } from './factory-scene'
 
-const TICK_MS = 100
-// shortcut: one second of the sample loop stands for half a minute of a real wave.
-const SAMPLE_SCALE = 30
-
-const median = (xs: number[]) => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : 0 }
+const TICK_MS = 250
 
 // The factory, drawn by the board's own world. The world takes the whole stage; a thin glass bar
 // carries the gauges and the counts, and a band drops in while sending is held.
-export function FactoryWorld({ theme = 'light' }: { theme?: 'light' | 'dark' }) {
+export function FactoryWorld({ theme = 'dark' }: { theme?: 'light' | 'dark' }) {
     const [clock, setClock] = useState(() => ({ start: Date.now(), now: Date.now() }))
     const [expired, setExpired] = useState<Set<string>>(() => new Set())
     useEffect(() => {
@@ -37,20 +33,21 @@ export function FactoryWorld({ theme = 'light' }: { theme?: 'light' | 'dark' }) 
     }, [frame.counts.merged])
 
     const signInMin = Math.max(0, 412 - Math.floor((clock.now - clock.start) / 60_000))
-    const realMin = (ms: number) => (ms * SAMPLE_SCALE) / 60_000
+    // shortcut: the run measures are sample numbers that grow with the loop; the page reads the
+    // engine's stats endpoint (runs dataset, 24h) instead.
+    const runs = 118 + frame.counts.runs
     const values: MetricValues = {
-        intake: { text: String(frame.counts.waiting) },
+        queued: { text: String(frame.counts.queued) },
         building: { text: String(frame.counts.building) },
         review: { text: String(frame.counts.review) },
         checks: { text: String(frame.counts.checks) },
         shipped: { text: String(frame.counts.merged) },
-        copies: { text: `${frame.copies.code}/6 · ${frame.copies.LINUS}/3 · ${frame.copies.search}/3`, fill: (frame.copies.code / 6) * 100 },
-        leadTime: { text: frame.leadMs.length ? `${realMin(median(frame.leadMs)).toFixed(0)} min` : '–' },
-        throughput: { text: frame.counts.merged && t ? (frame.counts.merged / (realMin(t) / 60)).toFixed(1) : '–' },
-        firstPass: { text: frame.counts.merged ? '100%' : '–' },
-        blocked: { text: '0' },
+        runs: { text: String(runs) },
+        totalTokens: { text: `${((runs * 0.31) / 1).toFixed(1)}M` },
+        cachedShare: { text: '87%', fill: 87 },
+        avgDuration: { text: '2m 41s' },
+        errorRate: { text: '1.7%' },
         planWeek: { text: '56%', fill: 56 },
-        tokensPerJob: { text: '312k' },
         signIn: frame.held ? { text: 'renewing', fill: 2, warn: true } : { text: `${signInMin} min`, fill: Math.min(100, (signInMin / 480) * 100) },
     }
 
@@ -75,7 +72,7 @@ export function FactoryWorld({ theme = 'light' }: { theme?: 'light' | 'dark' }) 
                         <span className="text-sm font-semibold tracking-tight">Factory</span>
                         <span className="text-[10px] text-muted-foreground">sample</span>
                     </div>
-                    {(['now', 'today', 'cost'] as const).map(group => (
+                    {(['jobs', 'runs', 'plan'] as const).map(group => (
                         <div key={group} className="flex items-center gap-4 border-l border-border/70 pl-4">
                             {METRICS.filter(m => m.group === group).map(m => <Metric key={m.key} def={m} value={values[m.key]} />)}
                         </div>
@@ -96,7 +93,7 @@ export function FactoryWorld({ theme = 'light' }: { theme?: 'light' | 'dark' }) 
     )
 }
 
-const TONES: Partial<Record<MetricKey, string>> = { building: 'text-amber-500', review: 'text-emerald-500', checks: 'text-indigo-500', shipped: 'text-green-500' }
+const TONES: Partial<Record<MetricKey, string>> = { building: 'text-amber-500', review: 'text-emerald-500', checks: 'text-sky-500', shipped: 'text-green-500' }
 
 function Metric({ def, value }: { def: MetricDef; value: MetricValues[MetricKey] }) {
     return (
