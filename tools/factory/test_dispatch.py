@@ -32,6 +32,7 @@ class World:
         self.mergeable, self.unlabelled = "MERGEABLE", set()
         self.open_numbers = {7, 129}
         self.open_prs = []
+        self.runners, self.queued_runs, self.variables = [], [], {}
         self.ledger = None
         self.intent_seen = []
         self.cancels, self.sent_at, self.hide_runs = [], {}, False
@@ -111,6 +112,13 @@ class World:
             return json.dumps({"headRefOid": HEAD, "state": self.pr_state, "mergeable": self.mergeable})
         if a[:2] == ["pr", "list"]:
             return json.dumps(self.open_prs)
+        if a[0] == "api" and "/actions/runners" in a[1]:
+            return json.dumps({"runners": self.runners})
+        if a[0] == "api" and "status=queued" in a[1]:
+            return json.dumps({"workflow_runs": self.queued_runs})
+        if a[:2] == ["variable", "set"]:
+            self.variables[a[2]] = a[a.index("--body") + 1]
+            return ""
         if a[0] == "api" and "/timeline" in a[1]:
             return "[]"
         if a[0] == "api":

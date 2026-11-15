@@ -2,6 +2,7 @@ import argparse, datetime, hashlib, json, os, re, subprocess, sys, tempfile, tim
 
 import backlog
 import briefs
+import ci_route
 import clocks
 import cutshape
 import holds
@@ -288,6 +289,7 @@ class Dispatcher:
         self.store.import_json(cfg["json_state_file"])
         self.beats = 0
         self.unreadable = 0
+        self.ci_route = {}
         self.renewal_unreadable = False
         self.report_logged = set()
         self.started = now()
@@ -918,9 +920,27 @@ class Dispatcher:
         elif kept:
             holds.clear(self.store, "sign-in renewal")
 
+    def route_ci(self):
+        org = self.cfg.get("ci_route_org")
+        if not org:
+            return
+        try:
+            for cls, text in sorted(ci_route.poll(self.gh, org, self.repo, self.now()).items()):
+                if self.ci_route.get(cls) != text:
+                    self.gh(["variable", "set", ci_route.VARS[cls], "-R", self.repo, "--body", text])
+                    self.ci_route[cls] = text
+                    log("-", "CI %s now runs on %s" % (cls, "GitHub" if text == json.dumps(ci_route.HOSTED) else "the pool"))
+            self.ci_route.pop("error", None)
+        except (Error, ValueError, KeyError, TypeError) as e:
+            text = str(e) if isinstance(e, Error) else type(e).__name__
+            if self.ci_route.get("error") != text:
+                self.ci_route["error"] = text
+                log("-", "CI routing: %s" % text)
+
     def once(self):
         self.heartbeat()
         self.renewal_hold()
+        self.route_ci()
         try:
             self.intake()
         except (Error, ValueError, KeyError) as e:

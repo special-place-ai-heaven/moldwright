@@ -12,6 +12,7 @@
   "likely_fixed_days": 7,
   "proof": true,
   "slots": 15,
+  "ci_route_org": "special-place-ai-heaven",
   "ledger_file": "/state/ledger.db",
   "json_state_file": "/state/dispatch.json",
   "account_key_file": "/run/secrets/account_key",
