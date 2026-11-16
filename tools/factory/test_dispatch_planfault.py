@@ -1,5 +1,6 @@
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import dispatch as D
 import proof
 from test_dispatch_proof import ProofBase, met
 
@@ -117,6 +118,19 @@ class Fault(ProofBase):
         self.assertIn("Pull request #%s is open" % self.data()["pr"], brief)
         self.assertIn(PLAN2, brief)
 
+
+    def test_after_two_re_plans_a_plan_result_stays_returned_without_a_send(self):
+        self.to_proving()
+        self.w.finish("r2", self.plan_proof())
+        self.tick(2)
+        for j in self.d.jobs():
+            j["replans"] = D.MAX_REPLANS
+            j["replan_run"] = None
+            self.d.save(j, "two re-plans used")
+        sent = len(self.planner_sends())
+        self.tick(3)
+        self.assertEqual(self.state(), "returned")
+        self.assertEqual(len(self.planner_sends()), sent)
 
 if __name__ == "__main__":
     unittest.main()
