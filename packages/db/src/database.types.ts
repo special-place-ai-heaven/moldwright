@@ -1190,6 +1190,68 @@ export type Database = {
           },
         ]
       }
+      factory_projects: {
+        Row: {
+          active: boolean
+          added_at: string
+          added_by: string
+          base_branch: string | null
+          check_asked_at: string | null
+          checked_at: string | null
+          left_at: string | null
+          link: string
+          readiness: Json
+          ready: boolean
+          repo: string
+          selected_at: string | null
+          selected_by: string | null
+          wanted: boolean
+          workspace_id: number
+        }
+        Insert: {
+          active?: boolean
+          added_at?: string
+          added_by: string
+          base_branch?: string | null
+          check_asked_at?: string | null
+          checked_at?: string | null
+          left_at?: string | null
+          link: string
+          readiness?: Json
+          ready?: boolean
+          repo: string
+          selected_at?: string | null
+          selected_by?: string | null
+          wanted?: boolean
+          workspace_id: number
+        }
+        Update: {
+          active?: boolean
+          added_at?: string
+          added_by?: string
+          base_branch?: string | null
+          check_asked_at?: string | null
+          checked_at?: string | null
+          left_at?: string | null
+          link?: string
+          readiness?: Json
+          ready?: boolean
+          repo?: string
+          selected_at?: string | null
+          selected_by?: string | null
+          wanted?: boolean
+          workspace_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "factory_projects_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       foreman_conversations: {
         Row: {
           backend: string
@@ -3614,6 +3676,7 @@ export type Database = {
           created_at: string
           current_period_end: string | null
           custom_integrations: boolean
+          factory_owner: string | null
           first_paid_at: string | null
           icon_url: string | null
           id: number
@@ -3652,6 +3715,7 @@ export type Database = {
           created_at?: string
           current_period_end?: string | null
           custom_integrations?: boolean
+          factory_owner?: string | null
           first_paid_at?: string | null
           icon_url?: string | null
           id?: number
@@ -3690,6 +3754,7 @@ export type Database = {
           created_at?: string
           current_period_end?: string | null
           custom_integrations?: boolean
+          factory_owner?: string | null
           first_paid_at?: string | null
           icon_url?: string | null
           id?: number

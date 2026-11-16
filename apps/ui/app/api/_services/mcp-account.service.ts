@@ -2,6 +2,7 @@ import type { RunGoal } from '@rerun/contracts'
 import { MCP_SERVER_NAME_RE, connectorSkillReadOnlyError, FACTORY_SNAPSHOT_MAX_BYTES, factorySnapshotSchema, isSetupAnswered, MAX_TEXT_WRITE_CHARS, providerSchema, runGoalSchema, sleep, triggerMethodSchema, verbositySchema } from '@rerun/contracts'
 import { AccessDeniedError, assertAgentInWorkspace, callableEngineAgentIds, isAdminActor, keepVisible, manageableSpaceIds, spaceAccessMap, visibleAgentIds, visibleSpaceIds, type Actor } from '@/app/api/_auth/access'
 import type { Database } from '@/app/api/database.types'
+import { projectRows, takeFactoryReport } from '@/lib/factory/projects'
 import { putFactorySnapshot } from '@/lib/factory/snapshot-store'
 import {
     chat as engineChat,
@@ -1067,7 +1068,13 @@ export async function dispatchAccountTool(actor: Actor, name: string, args: Reco
             const parsed = factorySnapshotSchema.safeParse(args.snapshot)
             if (!parsed.success) throw new Error('factory_report: the snapshot does not match the schema')
             if (Date.parse(parsed.data.madeAt) > Date.now() + FACTORY_SNAPSHOT_MAX_SKEW_MS) throw new Error('factory_report: the snapshot is dated in the future')
-            return { kept: putFactorySnapshot(workspaceId, parsed.data) }
+            const kept = putFactorySnapshot(workspaceId, parsed.data)
+            if (!kept) return { kept }
+            try {
+                return { kept, ...(await takeFactoryReport(projectRows(createServiceRoleClient()), workspaceId, parsed.data)) }
+            } catch {
+                return { kept }
+            }
         }
 
         default:
