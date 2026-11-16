@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
     answer: null as unknown,
+    projects: null as unknown,
     world: { current: null as null | Record<string, unknown> },
     board: {
         agents: [] as { id: string; name: string; handle?: string }[],
@@ -17,7 +18,12 @@ const mocks = vi.hoisted(() => ({
     theme: 'dark' as string | undefined,
 }))
 
-vi.mock('@/app/api/_actions/factory.actions', () => ({ readFactorySnapshotAction: () => Promise.resolve(mocks.answer) }))
+vi.mock('@/app/api/_actions/factory.actions', () => ({
+    readFactorySnapshotAction: () => Promise.resolve(mocks.answer),
+    readFactoryProjectsAction: () => (mocks.projects ? Promise.resolve(mocks.projects) : Promise.reject(new Error('down'))),
+    addFactoryProjectAction: vi.fn(),
+    selectFactoryProjectAction: vi.fn(),
+}))
 vi.mock('@/components/factory/FactoryWorld', () => ({
     FactoryWorld: (props: Record<string, unknown>) => {
         mocks.world.current = props
@@ -65,6 +71,7 @@ beforeEach(() => {
     root = createRoot(host)
     ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
     mocks.answer = null
+    mocks.projects = null
     mocks.world.current = null
     mocks.workspace = { id: 7 }
     mocks.theme = 'dark'
@@ -212,6 +219,29 @@ describe('factory page', () => {
         await act(async () => { world().onSelectJob(11) })
         await click(byText('button', 'Open'))
         expect(mocks.board.focusAgentOnBoard).toHaveBeenCalledWith('c1', 'logs')
+    })
+
+    it('shows the project control in the bar, also before any picture arrived and when the list cannot be read', async () => {
+        await mount()
+        expect(host.querySelector('[data-project]')?.getAttribute('data-state')).toBe('unreachable')
+        mocks.projects = { owner: true, ownerSet: true, active: 'o/r', wanted: null, previous: null, projects: [] }
+        mocks.answer = snapshotWith([job(1)])
+        await remount()
+        expect(host.querySelector('[data-project-active]')?.textContent).toBe('o/r')
+        expect(host.querySelector('[data-project-mismatch]')).toBeNull()
+        expect(mocks.world.current!.snapshot).not.toBeNull()
+    })
+
+    it('refuses to draw a picture of a project that is neither the active one nor the one before, and says which', async () => {
+        mocks.projects = { owner: true, ownerSet: true, active: 'p/q', wanted: null, previous: null, projects: [] }
+        mocks.answer = snapshotWith([job(1)])
+        await mount()
+        expect(mocks.world.current!.snapshot).toBeNull()
+        expect(mocks.world.current!.scene).toBeUndefined()
+        expect(host.querySelector('[data-project-mismatch]')?.textContent).toBe('The picture held is of o/r, and the project selected is p/q. It is not drawn; the next beat of the dispatcher replaces it.')
+        mocks.projects = { owner: true, ownerSet: true, active: 'p/q', wanted: null, previous: 'o/r', projects: [] }
+        await remount()
+        expect(mocks.world.current!.snapshot).not.toBeNull()
     })
 
     it('hands the live snapshot to the floor for the bar, and null before it arrives', async () => {

@@ -3,12 +3,14 @@
 import { useTheme } from 'next-themes'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { readFactorySnapshotAction } from '@/app/api/_actions/factory.actions'
+import { addFactoryProjectAction, readFactoryProjectsAction, readFactorySnapshotAction, selectFactoryProjectAction } from '@/app/api/_actions/factory.actions'
 import { AgentPanel } from '@/components/agent/AgentPanel'
 import { ControlCenter } from '@/components/control-center/ControlCenter'
 import { FactoryLoader } from '@/components/factory/FactoryLoader'
+import { FactoryProject } from '@/components/factory/FactoryProject'
 import { FactoryTopBar } from '@/components/factory/FactoryTopBar'
 import { FactoryWorld } from '@/components/factory/FactoryWorld'
+import { snapshotFits, type ProjectsState } from '@/components/factory/factory-project'
 import { LOADER_TILE } from '@/components/factory/factory-state'
 import { sceneFromSnapshot } from '@/components/factory/from-snapshot'
 import { WorkspaceSwitcher } from '@/components/layout/WorkspaceSwitcher'
@@ -25,6 +27,8 @@ type Answer = Awaited<ReturnType<typeof readFactorySnapshotAction>>
 export default function FactoryPage() {
     const { resolvedTheme } = useTheme()
     const [answer, setAnswer] = useState<Answer>(null)
+    const [projects, setProjects] = useState<ProjectsState>('loading')
+    const readProjects = useCallback(() => readFactoryProjectsAction().then(setProjects).catch(() => setProjects('unreachable')), [])
 
     useEffect(() => {
         let alive = true
@@ -32,6 +36,9 @@ export default function FactoryPage() {
             readFactorySnapshotAction()
                 .then(next => { if (alive && next) setAnswer(next) })
                 .catch(() => {})
+            readFactoryProjectsAction()
+                .then(next => { if (alive) setProjects(next) })
+                .catch(() => { if (alive) setProjects('unreachable') })
         }
         read()
         const id = setInterval(read, POLL_MS)
@@ -41,7 +48,10 @@ export default function FactoryPage() {
         }
     }, [])
 
-    const snapshot = answer?.snapshot
+    const held = answer?.snapshot
+    const snapshot = snapshotFits(projects, held ?? null) ? held : undefined
+    const addProject = useCallback((link: string) => addFactoryProjectAction(link).finally(readProjects), [readProjects])
+    const selectProject = useCallback((repo: string) => selectFactoryProjectAction(repo).finally(readProjects), [readProjects])
     const scene = useCallback((_: number, now: number) => sceneFromSnapshot(snapshot!, now), [snapshot])
     const { workspace } = useSession()
 
@@ -100,7 +110,17 @@ export default function FactoryPage() {
                 snapshot={snapshot ?? null}
                 rightInset={rightInset}
                 theme={resolvedTheme === 'light' ? 'light' : 'dark'}
-                topBar={<FactoryTopBar snapshot={snapshot ?? null} selected={selected} onSelect={setSelected} names={names} onOpenCoworker={openCoworker} />}
+                topBar={(
+                    <div className="flex w-full flex-col items-center gap-2">
+                        <FactoryProject projects={projects} snapshot={held ?? null} onAdd={addProject} onSelect={selectProject} />
+                        {held && !snapshot && typeof projects !== 'string' && (
+                            <p data-project-mismatch role="status" className="text-xs text-muted-foreground">
+                                The picture held is of {held.repo}, and the project selected is {projects.active ?? held.home}. It is not drawn; the next beat of the dispatcher replaces it.
+                            </p>
+                        )}
+                        <FactoryTopBar snapshot={snapshot ?? null} selected={selected} onSelect={setSelected} names={names} onOpenCoworker={openCoworker} />
+                    </div>
+                )}
             />
             <WorkspaceSwitcher />
             <div className="absolute left-4 top-16 z-30">
