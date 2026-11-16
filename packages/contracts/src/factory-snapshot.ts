@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { factoryFinishingSchema, factoryReadinessSchema, factoryRepoSchema, factorySwitchSchema } from './factory-project.js'
+
 export const factoryJobStateSchema = z.enum([
     'waiting', 'queued', 'building', 'review_wait', 'reviewing', 'fix_wait', 'fixing', 'checks', 'proof_wait', 'proving',
     'merged', 'rejected', 'blocked', 'failed', 'returned', 'superseded',
@@ -182,6 +184,10 @@ export const factorySnapshotSchema = z.object({
     madeAt: isoTime,
     beat: count,
     repo: z.string().max(200),
+    home: factoryRepoSchema.optional(),
+    finishing: z.array(factoryFinishingSchema).max(10).optional(),
+    switch: factorySwitchSchema.optional(),
+    readiness: z.array(factoryReadinessSchema).max(5).optional(),
     jobs: z.array(factoryJobSchema).max(300),
     epics: z.array(factoryEpicSchema).max(50).optional(),
     planning: z.array(factoryPlanningSchema).max(5).optional(),

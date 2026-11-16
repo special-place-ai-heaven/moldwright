@@ -1,0 +1,214 @@
+{
+  "snapshot": {
+    "home": "special-place-ai-heaven/rerun",
+    "finishing": [
+      {
+        "repo": "special-place-ai-heaven/rerun",
+        "jobs": 2
+      }
+    ],
+    "switch": {
+      "repo": "special-place-ai-heaven/testpilot",
+      "from": "special-place-ai-heaven/rerun",
+      "by": "rob@example.com",
+      "at": "2026-11-16T18:00:00Z"
+    },
+    "readiness": [
+      {
+        "repo": "special-place-ai-heaven/testpilot",
+        "at": "2026-11-16T17:59:30Z",
+        "passed": true,
+        "base": "main",
+        "redgreen": false,
+        "lines": [
+          {
+            "name": "owner",
+            "ok": true,
+            "text": "special-place-ai-heaven is an owner the factory tools work for"
+          },
+          {
+            "name": "read",
+            "ok": true,
+            "text": "readable; its default branch is main"
+          },
+          {
+            "name": "push",
+            "ok": true,
+            "text": "pushed the branch factory-probe and removed it"
+          },
+          {
+            "name": "pull requests",
+            "ok": true,
+            "text": "pull requests are readable; opening one uses the push right shown above"
+          },
+          {
+            "name": "base",
+            "ok": true,
+            "text": "no dev branch: each job builds on its own branch job/<issue> cut from main, the line merges into that branch, and Rob merges it into main"
+          },
+          {
+            "name": "labels",
+            "ok": true,
+            "text": "created: factory, factory-paused, factory-blocked, factory-done, factory-problem, factory-plan, likely-fixed, P0, P1"
+          },
+          {
+            "name": "checks",
+            "ok": true,
+            "text": "pull requests run checks (811 runs so far)"
+          },
+          {
+            "name": "proof",
+            "ok": true,
+            "text": "no check \"Done-test red before green\": the prover runs the done-test on the base and on the head itself"
+          },
+          {
+            "name": "issues",
+            "ok": true,
+            "text": "0 open issues: 0 in the cut format, 0 labelled factory and not readable, 0 go to the planning station first"
+          }
+        ]
+      }
+    ]
+  },
+  "answer": {
+    "kept": true,
+    "project": {
+      "repo": "special-place-ai-heaven/testpilot",
+      "by": "rob@example.com"
+    },
+    "check": [
+      "special-place-ai-heaven/testpilot"
+    ]
+  },
+  "projects": {
+    "owner": true,
+    "ownerSet": true,
+    "active": "special-place-ai-heaven/testpilot",
+    "wanted": null,
+    "previous": "special-place-ai-heaven/rerun",
+    "projects": [
+      {
+        "repo": "special-place-ai-heaven/rerun",
+        "link": "special-place-ai-heaven/rerun",
+        "base": "dev",
+        "addedAt": "2026-11-16T17:00:00Z",
+        "addedBy": "rob@example.com",
+        "active": false,
+        "ready": true,
+        "checking": false,
+        "checkedAt": "2026-11-16T17:59:30Z",
+        "lines": [
+          {
+            "name": "owner",
+            "ok": true,
+            "text": "special-place-ai-heaven is an owner the factory tools work for"
+          },
+          {
+            "name": "read",
+            "ok": true,
+            "text": "readable; its default branch is main"
+          },
+          {
+            "name": "push",
+            "ok": true,
+            "text": "pushed the branch factory-probe and removed it"
+          },
+          {
+            "name": "pull requests",
+            "ok": true,
+            "text": "pull requests are readable; opening one uses the push right shown above"
+          },
+          {
+            "name": "base",
+            "ok": true,
+            "text": "no dev branch: each job builds on its own branch job/<issue> cut from main, the line merges into that branch, and Rob merges it into main"
+          },
+          {
+            "name": "labels",
+            "ok": true,
+            "text": "created: factory, factory-paused, factory-blocked, factory-done, factory-problem, factory-plan, likely-fixed, P0, P1"
+          },
+          {
+            "name": "checks",
+            "ok": true,
+            "text": "pull requests run checks (811 runs so far)"
+          },
+          {
+            "name": "proof",
+            "ok": true,
+            "text": "no check \"Done-test red before green\": the prover runs the done-test on the base and on the head itself"
+          },
+          {
+            "name": "issues",
+            "ok": true,
+            "text": "0 open issues: 0 in the cut format, 0 labelled factory and not readable, 0 go to the planning station first"
+          }
+        ],
+        "selectedAt": null,
+        "selectedBy": null,
+        "leftAt": "2026-11-16T18:00:00Z"
+      },
+      {
+        "repo": "special-place-ai-heaven/testpilot",
+        "link": "https://github.com/special-place-ai-heaven/testpilot.git",
+        "base": "main",
+        "addedAt": "2026-11-16T17:00:00Z",
+        "addedBy": "rob@example.com",
+        "active": true,
+        "ready": true,
+        "checking": false,
+        "checkedAt": "2026-11-16T17:59:30Z",
+        "lines": [
+          {
+            "name": "owner",
+            "ok": true,
+            "text": "special-place-ai-heaven is an owner the factory tools work for"
+          },
+          {
+            "name": "read",
+            "ok": true,
+            "text": "readable; its default branch is main"
+          },
+          {
+            "name": "push",
+            "ok": true,
+            "text": "pushed the branch factory-probe and removed it"
+          },
+          {
+            "name": "pull requests",
+            "ok": true,
+            "text": "pull requests are readable; opening one uses the push right shown above"
+          },
+          {
+            "name": "base",
+            "ok": true,
+            "text": "no dev branch: each job builds on its own branch job/<issue> cut from main, the line merges into that branch, and Rob merges it into main"
+          },
+          {
+            "name": "labels",
+            "ok": true,
+            "text": "created: factory, factory-paused, factory-blocked, factory-done, factory-problem, factory-plan, likely-fixed, P0, P1"
+          },
+          {
+            "name": "checks",
+            "ok": true,
+            "text": "pull requests run checks (811 runs so far)"
+          },
+          {
+            "name": "proof",
+            "ok": true,
+            "text": "no check \"Done-test red before green\": the prover runs the done-test on the base and on the head itself"
+          },
+          {
+            "name": "issues",
+            "ok": true,
+            "text": "0 open issues: 0 in the cut format, 0 labelled factory and not readable, 0 go to the planning station first"
+          }
+        ],
+        "selectedAt": "2026-11-16T18:00:00Z",
+        "selectedBy": "rob@example.com",
+        "leftAt": null
+      }
+    ]
+  }
+}
