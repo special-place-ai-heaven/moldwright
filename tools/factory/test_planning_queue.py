@@ -91,6 +91,13 @@ class Queue(TD.Base):
         self.tick()
         self.assertEqual(self.planned(), [])
 
+    def test_max_queue_default_lets_19_plan(self):
+        del self.cfg["planning"]
+        self.fill(19)
+        self.d.beats = 5
+        self.tick()
+        self.assertEqual(len(self.planned()), 1)
+
 
 class Blocked(TD.Base):
     def setUp(self):
