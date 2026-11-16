@@ -39,6 +39,7 @@ class World:
         self.problems, self.reruns, self.deleted = [], [], set()
         self.commits, self.dev_runs = [], []
         self.merge_sha = "feedface12345678"
+        self.reports, self.report_answer = [], None
 
     @staticmethod
     def goal_ok(goal):
@@ -49,7 +50,12 @@ class World:
                 and all(isinstance(f, dict) and set(f) == {"prefix", "rest"} and isinstance(f["prefix"], str) and 1 <= len(f["prefix"]) <= 40
                         and f["rest"] in ("pull-url", "sha", "sentence") for f in forms))
 
-    def account(self, tool, args):
+    def account(self, tool, args, **kw):
+        if kw and (tool != "factory_report" or self.report_answer is None):
+            raise TypeError(tool)
+        if tool == "factory_report":
+            self.reports.append(args["snapshot"])
+            return self.report_answer
         if tool == "send_message":
             if "goal" in args and not self.goal_ok(args["goal"]):
                 self.sends.append((args["agentId"], args["message"], args["waitSeconds"]))
