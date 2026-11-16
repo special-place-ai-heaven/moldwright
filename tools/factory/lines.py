@@ -3,9 +3,11 @@ import os
 import re
 import time
 
+import readiness
 import states
 
 END = states.END
+CHECK_EVERY_S = 60
 REPO = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9_.-]{1,100}$")
 
 
@@ -28,7 +30,8 @@ def live(d):
 
 class Lines:
     def __init__(self, cfg, account, gh, now=time.time, make=None, mod=None):
-        self.cfg, self.now, self.home = cfg, now, cfg["repo"]
+        self.cfg, self.now, self.home, self.gh = cfg, now, cfg["repo"], gh
+        self.results, self.checked = {}, {}
         self.mod = mod or __import__("dispatch")
         self.make = make or (lambda c: self.mod.Dispatcher(c, account, gh, now))
         self.lines, self.said, self.last = {}, set(), None
@@ -69,6 +72,8 @@ class Lines:
         out = {"home": self.home, "finishing": [{"repo": r, "jobs": n} for r, n in self.finishing()][:10]}
         if self.last:
             out["switch"] = self.last
+        if self.results:
+            out["readiness"] = list(self.results.values())[-5:]
         return out
 
     def problem(self, text):
@@ -89,7 +94,25 @@ class Lines:
         self.kv.set("-", "finishing", json.dumps([r for r, _ in self.finishing()]))
         self.learn(self.lines[self.active].answer)
 
+    def check(self, asked):
+        now = self.now()
+        for repo in asked if isinstance(asked, list) else []:
+            if isinstance(repo, str) and REPO.match(repo) and now - self.checked.get(repo, -CHECK_EVERY_S) >= CHECK_EVERY_S:
+                self.checked[repo] = now
+                got = readiness.check(self.gh, repo, now)
+                self.results.pop(repo, None)
+                self.results[repo] = got
+                self.kv.set("-", "ready:" + repo, json.dumps({k: got[k] for k in ("passed", "at", "base", "redgreen")}))
+                self.mod.log("project", "readiness of %s: %s" % (repo, "passed" if got["passed"] else "; ".join(
+                    "%s: %s" % (x["name"], x["text"]) for x in got["lines"] if not x["ok"])[:300]))
+                return
+
     def learn(self, answer):
+        if isinstance(answer, dict):
+            try:
+                self.check(answer.get("check"))
+            except Exception as e:
+                self.problem("readiness: %s" % type(e).__name__)
         if answer is None or (isinstance(answer, dict) and answer.get("project") is None):
             return
         p = answer.get("project") if isinstance(answer, dict) else None
