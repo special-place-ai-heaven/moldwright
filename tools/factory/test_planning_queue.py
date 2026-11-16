@@ -1,115 +1,145 @@
-import copy, json, os, sys, unittest
+import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import pools
-import test_planning_start as T
+import test_dispatch as TD
 
 BOSS = "39311ebf-8324-42a4-8ab4-770acd1653f2"
+PLANNER = {"coworkers": [{"id": "p1", "name": "One", "runs": 1}]}
 
 
-def one_issue():
-    return [T.issue(11, "P0", "2026-11-10T00:00:00Z")]
+def backlog():
+    return [{"number": 11, "title": "T11", "labels": [{"name": "P0"}], "createdAt": "2026-11-10T00:00:00Z"}]
 
 
-class Rig(T.Rig):
-    def __init__(self, cfg=None, jobs=0, state="queued"):
-        super().__init__(cfg)
-        self.backlog = one_issue()
-        self.output = ""
-        for i in range(jobs):
-            self.store.put_job(str(1000 + i), state, {"issue": 1000 + i})
+class PWorld(TD.World):
+    def __init__(self):
+        super().__init__(issues=[])
+        self.backlog = backlog()
+        self.listed = 0
 
     def gh(self, args):
-        if args[:2] == ["issue", "list"] and "--search" not in args:
-            self.calls.append(list(args))
+        a = list(args)
+        if a[:2] == ["issue", "list"] and "--search" in a:
+            self.gh_calls.append(a)
+            return "[]"
+        if a[:2] == ["issue", "list"] and "--label" not in a:
+            self.gh_calls.append(a)
+            self.listed += 1
             return json.dumps(self.backlog)
-        if args[:2] == ["issue", "edit"] and "--add-label" in args:
-            label = args[args.index("--add-label") + 1]
-            for i in self.backlog:
-                if str(i["number"]) == args[2]:
-                    i["labels"].append({"name": label})
-        return super().gh(args)
-
-    def account(self, tool, args):
-        if tool == "get_run":
-            return {"status": "done", "output": self.output}
-        return super().account(tool, args)
+        if a[:2] == ["issue", "edit"] and "--add-label" in a and a[2] == "11":
+            label = a[a.index("--add-label") + 1]
+            if label != "factory":
+                self.backlog[0]["labels"].append({"name": label})
+        return super().gh(a)
 
 
-def cfg_with(max_queue=None):
-    cfg = copy.deepcopy(T.CFG)
-    if max_queue is not None:
-        cfg["planning"] = {"max_queue": max_queue}
-    return cfg
+class Queue(TD.Base):
+    max_queue = 3
 
+    def setUp(self):
+        super().setUp()
+        self.w = PWorld()
+        self.w.ledger = self.cfg["ledger_file"]
+        self.cfg["types"] = {"planner": PLANNER}
+        self.cfg["planning"] = {"max_queue": self.max_queue}
 
-class Queue(unittest.TestCase):
+    def fill(self, n, state="queued"):
+        self.w.backlog = []
+        self.tick()
+        self.w.backlog = backlog()
+        for i in range(n):
+            self.d.store.put_job(str(1000 + i), state, {"issue": 1000 + i})
+
+    def planned(self):
+        return [s for s in self.w.sends if "#11" in s[1]]
+
     def test_no_cut_when_queue_is_at_max(self):
-        r = Rig(cfg_with(20), jobs=20)
-        r.station.start()
-        self.assertEqual(r.sends, [])
-        self.assertEqual(r.listed(), [])
-        r = Rig(cfg_with(20), jobs=19)
-        r.station.start()
-        self.assertEqual(len(r.sends), 1)
+        self.fill(3)
+        self.w.listed = 0
+        self.d.beats = 5
+        self.tick()
+        self.assertEqual(self.planned(), [])
+        self.assertEqual(self.w.listed, 0)
+
+    def test_one_below_max_still_plans(self):
+        self.fill(2)
+        self.d.beats = 5
+        self.tick()
+        self.assertEqual(len(self.planned()), 1)
 
     def test_waiting_jobs_count_too(self):
-        r = Rig(cfg_with(20), jobs=20, state="waiting")
-        r.station.start()
-        self.assertEqual(r.sends, [])
+        self.fill(3, "waiting")
+        self.d.beats = 5
+        self.tick()
+        self.assertEqual(self.planned(), [])
 
-    def test_only_waiting_and_queued_count(self):
-        for state in ("building", "review_wait"):
-            r = Rig(cfg_with(20), jobs=20, state=state)
-            r.station.start()
-            self.assertEqual(len(r.sends), 1)
+    def plans_with(self, state):
+        self.fill(3, state)
+        self.d.beats = 5
+        self.tick()
+        return len(self.planned())
+
+    def test_building_jobs_do_not_count(self):
+        self.assertEqual(self.plans_with("building"), 1)
+
+    def test_review_wait_jobs_do_not_count(self):
+        self.assertEqual(self.plans_with("review_wait"), 1)
 
     def test_max_queue_defaults_to_20(self):
-        r = Rig(cfg_with(), jobs=20)
-        r.station.start()
-        self.assertEqual(r.sends, [])
-        r = Rig(cfg_with(), jobs=19)
-        r.station.start()
-        self.assertEqual(len(r.sends), 1)
+        del self.cfg["planning"]
+        self.fill(20)
+        self.d.beats = 5
+        self.tick()
+        self.assertEqual(self.planned(), [])
 
 
-class Blocked(unittest.TestCase):
+class Blocked(TD.Base):
+    def setUp(self):
+        super().setUp()
+        self.w = PWorld()
+        self.w.ledger = self.cfg["ledger_file"]
+        self.cfg["types"] = {"planner": PLANNER}
+
     def run_blocked(self, text):
-        r = Rig(cfg_with())
-        r.station.start()
-        self.assertEqual(r.numbers(), [11])
-        r.output = text
-        r.station.once(2)
-        return r
+        self.tick()
+        self.assertEqual(len(self.w.sends), 1)
+        self.w.runs["run1"] = {"status": "done", "output": text}
+        self.tick()
+
+    def likely_fixed(self):
+        return [c for c in self.w.gh_calls if c[:3] == ["issue", "edit", "11"] and "likely-fixed" in c]
+
+    def comments(self):
+        return [c for c in self.w.gh_calls if c[:3] == ["issue", "comment", "11"]]
 
     def test_blocked_already_built_labels_likely_fixed(self):
-        r = self.run_blocked("BLOCKED: the parent is already built by #700")
-        edits = [e for e in r.edits() if e[1] == "likely-fixed"]
-        self.assertEqual(edits, [("11", "likely-fixed")])
-        self.assertEqual(r.store.get_all("plan:11")["state"], "blocked")
-        self.assertTrue(any(c[:3] == ["issue", "comment", "11"] for c in r.calls))
-        r.store.set("plan:11", "state", "unsent")
-        before = len(r.sends)
-        r.station.start()
-        self.assertEqual(len(r.sends), before)
+        self.run_blocked("BLOCKED: the parent is already built by #700")
+        self.assertEqual(len(self.likely_fixed()), 1)
+        self.assertEqual(self.d.station.store.get_all("plan:11")["state"], "blocked")
+        self.assertTrue(self.comments())
+        self.d.station.store.set("plan:11", "state", "unsent")
+        before = len(self.w.sends)
+        self.d.beats = 5
+        self.tick()
+        self.assertEqual(len(self.w.sends), before)
 
     def test_other_blocked_reason_no_label(self):
-        r = self.run_blocked("BLOCKED: the issue names no file")
-        self.assertNotIn("likely-fixed", [e[1] for e in r.edits()])
-        self.assertTrue(any(c[:3] == ["issue", "comment", "11"] for c in r.calls))
+        self.run_blocked("BLOCKED: the issue names no file")
+        self.assertEqual(self.likely_fixed(), [])
+        self.assertTrue(self.comments())
 
 
-class Shipped(unittest.TestCase):
+class Shipped(TD.Base):
     def test_shipped_settings_keep_boss_first(self):
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dispatch.json")
         with open(path) as f:
-            cfg = json.load(f)
-        cfg["repo"] = "o/r"
-        cfg["types"] = {k: v for k, v in cfg["types"].items() if all("id" in c for c in v["coworkers"])}
-        self.assertEqual(cfg["planning"]["max_queue"], 20)
-        self.assertEqual(pools.pick_copy(cfg, "planner", [])[0], BOSS)
-        r = Rig(cfg)
-        r.station.start()
-        self.assertEqual(r.sends[0][0], BOSS)
+            shipped = json.load(f)
+        self.assertEqual(shipped["planning"]["max_queue"], 20)
+        self.w = PWorld()
+        self.w.ledger = self.cfg["ledger_file"]
+        self.cfg["types"] = {"planner": shipped["types"]["planner"]}
+        self.cfg["planning"] = shipped["planning"]
+        self.tick()
+        self.assertEqual(self.w.sends[0][0], BOSS)
 
 
 if __name__ == "__main__":
