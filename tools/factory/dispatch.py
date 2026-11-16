@@ -146,6 +146,11 @@ def stale_paragraph(j):
     ]
 
 
+RED_GREEN_ASK = ('This project has no check "Done-test red before green", so you run it: open a worktree of your own with '
+                 '`/data/tools/bin/wt new %s %s p1`, run the Run lines of the issue on the base commit of the pull request and on its head, '
+                 'and quote the line that fails on the base and the line that passes on the head. You change no file there.')
+
+
 def where(j):
     return j.get("repo") or "rerun"
 
@@ -366,6 +371,7 @@ class Dispatcher:
         self.fill_ids()
         self.repo, self.label = cfg["repo"], cfg.get("label", "factory")
         self.home = cfg.get("home") or self.repo
+        self.base = cfg.get("base") or "dev"
         self.taking, self.reporting, self.answer = True, True, None
         self.others, self.extra = list, dict
         self.store = ledger_store.Store(cfg["ledger_file"])
@@ -996,7 +1002,7 @@ class Dispatcher:
         if not j.get("plan_dev"):
             return None
         try:
-            got = json.loads(self.gh(["api", "repos/%s/compare/%s...dev" % (self.repo, j["plan_dev"]), "--jq", "[.files[].filename]"]))
+            got = json.loads(self.gh(["api", "repos/%s/compare/%s...%s" % (self.repo, j["plan_dev"], self.base), "--jq", "[.files[].filename]"]))
             if not isinstance(got, list):
                 raise TypeError("compare answer is not a list")
             return [p for p in j["paths"] if p in got]
@@ -1082,7 +1088,7 @@ class Dispatcher:
         elif st == "proof_wait":
             got = self.free_prover(j)
             if got and self.take(j):
-                self.start(j, got[0], "proof of #%s at %s" % (j["pr"], j["head"][:7]), "proving", copy=got[1], prover=got[0], asks=proof.asks(j.get("body")))
+                self.start(j, got[0], "proof of #%s at %s" % (j["pr"], j["head"][:7]), "proving", copy=got[1], prover=got[0], asks=proof.asks(j.get("body")) + ([] if self.cfg.get("redgreen", True) else [RED_GREEN_ASK % (where(j), j["issue"])]))
         elif st == "proving":
             out = self.finished_run(j)
             if out is None:

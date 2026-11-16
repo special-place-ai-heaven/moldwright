@@ -17,11 +17,12 @@ def ledger_path(cfg, repo):
     return os.path.join(os.path.dirname(cfg["ledger_file"]), "ledger-%s.db" % repo.replace("/", "--"))
 
 
-def line_cfg(cfg, repo):
+def line_cfg(cfg, repo, facts=None):
     if repo == cfg["repo"]:
         return cfg
-    path = ledger_path(cfg, repo)
-    return dict(cfg, repo=repo, home=cfg["repo"], ledger_file=path, json_state_file=path + ".json")
+    path, facts = ledger_path(cfg, repo), facts or {}
+    return dict(cfg, repo=repo, home=cfg["repo"], ledger_file=path, json_state_file=path + ".json",
+                base=facts.get("base") or "dev", redgreen=facts.get("redgreen") is True)
 
 
 def live(d):
@@ -66,7 +67,7 @@ class Lines:
         return got if isinstance(got, type(default)) else default
 
     def open(self, repo):
-        self.lines[repo] = self.make(line_cfg(self.cfg, repo))
+        self.lines[repo] = self.make(line_cfg(self.cfg, repo, None if repo == self.home else self.read("ready:" + repo, {})))
         return self.lines[repo]
 
     def roles(self):
