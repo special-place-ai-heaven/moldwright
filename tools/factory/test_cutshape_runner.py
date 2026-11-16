@@ -53,8 +53,8 @@ class CutShapeRunner(unittest.TestCase):
     def test_the_brief_says_the_runner_has_no_uvx(self):
         text = planning.brief({"number": 1, "title": "t"}, "o/rerun")
         self.assertIn("uvx", text)
-        self.assertIn("runs on the CI runner", text)
-        self.assertIn("which has no `uvx`: use none", text)
+        self.assertIn("Factory tools", text)
+        self.assertIn("lint is no Run line", text)
         cut_line = [l for l in text.splitlines() if "cut format of #333" in l][0]
         self.assertNotIn("uvx", cut_line)
 

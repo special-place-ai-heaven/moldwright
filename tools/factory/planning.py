@@ -44,7 +44,7 @@ def brief(issue, repo):
         "",
         f"Cut it into child issues in the cut format of #333. This issue is the parent: open no other parent. Each child starts with `PLAN READY (cut of #{number}; facts read on dev at <sha>)` and has `**Part of**: #{number}`, `**Worker**: coder`, `**Test file**`, `**Test through**` (the public interface the done-test calls), `**Files**` (allowed paths, one path per bullet), `**Change**` (written against the code on dev, with functions and lines, one bullet per ask), `**Done-test**` (written first and seen failing), `**Run**` (each line run once on dev before filing) and `**Depends on**` (issue numbers or `none`).",
         "",
-        "A Run line runs on the CI runner, which has no `uvx`: use none.",
+        "The CI runner has no `uvx`; lint is no Run line: Factory tools CI runs ruff.",
         "",
         "Compute on dev, before filing, every number a done-test asserts. Two children name the same file only when one depends on the other. The done-test calls the feature only through that public interface (a function the module exports, an HTTP route or a CLI command) and mock nothing of the module's own internals; only a boundary the repository already fakes (the network, the clock, the model) may be faked. Each Change says: add no comments in code.",
         "",
