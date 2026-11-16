@@ -1,4 +1,4 @@
-import os, shutil, subprocess, sys, tempfile, unittest
+import json, os, shutil, subprocess, sys, tempfile, unittest
 from unittest import mock
 
 import test_factory as T
@@ -14,7 +14,15 @@ class CloneCase(T.FactoryCase):
         self.prs = {}
 
     def sweep(self, *argv):
-        with mock.patch.object(F, "pr_lookup", lambda full, branch: self.prs.get(branch, [])):
+        real_run = F.run
+
+        def fake_run(cmd, *a, **k):
+            if cmd[0] != F.GH:
+                return real_run(cmd, *a, **k)
+            branch = cmd[cmd.index("--head") + 1]
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(self.prs.get(branch, [])), "")
+
+        with mock.patch.object(F, "run", fake_run):
             return self.call(F.cmd_wt, ["sweep"] + list(argv))
 
     def verdicts(self, out):
