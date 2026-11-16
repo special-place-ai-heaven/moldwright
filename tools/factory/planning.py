@@ -7,6 +7,9 @@ import pools
 
 DEV = re.compile(r"(?m)^PLAN READY\b[^\n]*\bdev (?:at )?([0-9a-f]{7,40})\b")
 FINAL = re.compile(r"(?m)^(CUT|BLOCKED):[ \t]*(.*)$")
+FIXED = re.compile(r"(?i)\balready\b.*\b(built|cut|merged|done|fixed)\b")
+MAX_QUEUE = 20
+LIKELY_FIXED = "likely-fixed"
 
 GOAL_LINE = "The goal every factory job serves is the brain page `north-star-factory`. Read it with your brain tool only when the issue leaves open a choice that the goal settles."
 LABEL = "factory-plan"
@@ -177,6 +180,11 @@ class Station:
             self.gh(["issue", "comment", str(n), "-R", self.repo, "--body", "The factory planner stopped: %s" % rest])
         except Exception:
             pass
+        if kind == "BLOCKED" and FIXED.search(rest):
+            try:
+                self.gh(["issue", "edit", str(n), "-R", self.repo, "--add-label", LIKELY_FIXED])
+            except Exception:
+                pass
 
     def finish(self, n, state, why):
         job = "plan:%d" % n
@@ -204,6 +212,9 @@ class Station:
     def start(self):
         room = self.parallel - len(self.live())
         if room <= 0:
+            return
+        limit = self.cfg.get("planning", {}).get("max_queue", MAX_QUEUE)
+        if sum(1 for j in self.store.jobs() if j.get("state") in ("waiting", "queued")) >= limit:
             return
         issues = json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "open", "--json",
                                      "number,title,labels,createdAt", "--limit", "100"]))
