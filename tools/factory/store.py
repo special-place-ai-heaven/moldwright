@@ -37,11 +37,16 @@ CREATE TABLE IF NOT EXISTS transitions(
   from_state TEXT, to_state TEXT NOT NULL, reason TEXT, round INTEGER, run_id TEXT);
 CREATE INDEX IF NOT EXISTS transitions_job ON transitions(job, id);
 CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, key TEXT NOT NULL, old TEXT, new TEXT);
+CREATE TABLE IF NOT EXISTS changes(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT NOT NULL, issue INTEGER NOT NULL,
+  grp TEXT NOT NULL, kind TEXT NOT NULL, before REAL, live_at REAL, after REAL,
+  verdict TEXT, revert INTEGER, told INTEGER NOT NULL DEFAULT 0);
 """
 JOB_STATES = states.NAMES
 FIRE_COLUMNS = (("cache_read", "INTEGER"), ("cache_write", "INTEGER"), ("seconds", "INTEGER"),
                 ("steps", "INTEGER"), ("steps_at", "TEXT"))
 OPEN = ("intent", "running")
+CHANGE_FIELDS = frozenset(("live_at", "after", "verdict", "revert", "told"))
 
 
 def now():
@@ -290,6 +295,26 @@ class Store:
     def events(self):
         rows = self.db.execute("SELECT at, key, old, new FROM events ORDER BY id").fetchall()
         return [{"at": r[0], "key": r[1], "from": json.loads(r[2]), "to": json.loads(r[3])} for r in rows]
+
+    def add_change(self, issue, group, kind, before, at=None):
+        with self.db:
+            cur = self.db.execute("INSERT INTO changes(at, issue, grp, kind, before) VALUES (?,?,?,?,?)",
+                                  (at or now(), issue, group, kind, before))
+        return cur.lastrowid
+
+    def set_change(self, change_id, **fields):
+        bad = set(fields) - CHANGE_FIELDS
+        if bad:
+            raise ValueError(f"unknown change column: {', '.join(sorted(bad))}")
+        if not fields:
+            return
+        names = sorted(fields)
+        with self.db:
+            self.db.execute(f"UPDATE changes SET {', '.join(n + '=?' for n in names)} WHERE id=?",
+                            [fields[n] for n in names] + [change_id])
+
+    def changes(self):
+        return [dict(r) for r in self.db.execute("SELECT * FROM changes ORDER BY id")]
 
     def steps_seen(self, fire_id, steps, at=None):
         self.db.execute("UPDATE fires SET steps=?, steps_at=? WHERE id=? AND steps IS NOT ?",
