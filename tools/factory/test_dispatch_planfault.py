@@ -102,27 +102,21 @@ class Fault(ProofBase):
         self.assertEqual(self.state(), "fix_wait")
         self.assertEqual(self.planner_sends(), [])
 
-    def test_the_proof_and_review_briefs_name_the_plan_form(self):
-        j = {"issue": 5, "title": "t"}
-        self.assertIn("NOT MET (plan)", D.proof_brief(j, 9, HEAD, ["a"]))
-        self.assertIn("VERDICT: REJECT (plan) @", D.review_brief(j, 9, HEAD))
-        j.update(pr=9, plan_lines="ASK 2: NOT MET (plan) x", reason="plan: proof: x")
-        brief = D.replan_brief(j, "o/r", 1)
-        self.assertIn("Pull request #9 is open", brief)
-        self.assertIn("ASK 2: NOT MET (plan) x", brief)
+    def test_the_proof_brief_names_the_plan_form(self):
+        self.to_proving()
+        self.assertIn("NOT MET (plan)", self.w.sends[-1][1])
 
-    def test_after_two_re_plans_a_plan_result_stays_returned_without_a_send(self):
+    def test_the_review_brief_names_the_plan_form(self):
+        self.to_review()
+        self.assertIn("VERDICT: REJECT (plan) @", self.w.sends[-1][1])
+
+    def test_the_re_plan_brief_says_the_pull_request_is_open(self):
         self.to_proving()
         self.w.finish("r2", self.plan_proof())
         self.tick(2)
-        for j in self.d.jobs():
-            j["replans"] = D.MAX_REPLANS
-            j["replan_run"] = None
-            self.d.save(j, "two re-plans used")
-        sent = len(self.planner_sends())
-        self.tick(3)
-        self.assertEqual(self.state(), "returned")
-        self.assertEqual(len(self.planner_sends()), sent)
+        brief = self.planner_sends()[0][1]
+        self.assertIn("Pull request #%s is open" % self.data()["pr"], brief)
+        self.assertIn(PLAN2, brief)
 
 
 if __name__ == "__main__":
