@@ -174,6 +174,7 @@ def replan_brief(j, repo, n):
         'One re-plan, sent by the dispatcher and not by Boss: %s issue #%s ("%s"). Re-plan %d of %d. You work alone: call no other coworker and send no question to Rob.' % (repo, j["issue"], j["title"], n, MAX_REPLANS),
         '',
         'The builder stopped this job with: %s' % (j.get("reason") or "-"),
+        *(['Pull request #%s is open and its diff was found right, so only the issue text is corrected.' % j.get("pr"), str(j["plan_lines"])] if j.get("plan_lines") else []),
         '',
         'Do three things:',
         '1. Read the issue against today\'s dev in a throwaway checkout.',
@@ -206,6 +207,8 @@ def review_brief(j, pr, head):
         '',
         'On GitHub write coworker names without the at-sign.',
         '',
+        'When the diff is right and the issue is wrong (its text, its Files or its Run block), the last line is `VERDICT: REJECT (plan) @<first 7 characters>: <one sentence>`.',
+        '',
         final_state(j, '`VERDICT: ACCEPT @<first 7 characters of the commit>` or `VERDICT: REJECT @<first 7 characters>: <one sentence>`'),
         TAIL,
     ])
@@ -223,6 +226,8 @@ def proof_brief(j, pr, head, asks):
         *["ASK %d: %s" % (n, a) for n, a in enumerate(asks, 1)],
         '',
         'For each ask write one line: `ASK <n>: MET <evidence>` (the file and the line in the diff and the test that shows it, or the check of this commit that shows it) or `ASK <n>: NOT MET <why>`; every ask number gets exactly one line, and only an ask you found not met is NOT MET. A Run line is MET when the check "Done-test red before green" passed at this commit: that check ran every Run line of the issue at this commit and passes only when each one passes there and the done-test fails on dev\'s code; name the test file and line the Run line runs. When the issue carries `**Red before green**: not applicable`, that check runs the Run lines at this commit only, without the run on dev\'s code: a Run line is MET when the check reports that the Run lines pass at the head (name the check and the line).',
+        '',
+        'When the diff is right and the issue is wrong (an ask the checks refuse, a file the change must touch that is not in Files, a Run line that is not in the Run block), write that ask as `ASK <n>: NOT MET (plan) <what is wrong in the issue text, its Files or its Run block>`; the job then goes back to the planner, not to the builder.',
         '',
         'Post those lines on the pull request with your review tool.',
         '',
@@ -981,7 +986,10 @@ class Dispatcher:
             self.follow_ups(j, out)
             named = verdict_head(verdict)
             stale = bool(re.match(r"VERDICT:\s*ACCEPT", verdict)) and named != j["head"][:7]
-            if re.match(r"VERDICT:\s*ACCEPT", verdict) and not stale:
+            if re.match(r"VERDICT:\s*REJECT \(plan\)", verdict):
+                j["plan_lines"] = verdict
+                self.end(j, "returned", "plan: review: " + verdict[:180])
+            elif re.match(r"VERDICT:\s*ACCEPT", verdict) and not stale:
                 self.to(j, "checks", "accepted at %s" % j["head"][:7], checks_since=self.now())
             elif re.match(r"VERDICT:\s*REJECT", verdict) and j["round"] == 1:
                 self.to(j, "fix_wait", verdict[:160], review=out[-1500:], same_round=False)
@@ -1020,6 +1028,9 @@ class Dispatcher:
             kind, why = proof.judge(out, len(j["asks"]), j["head"])
             if kind == "pass":
                 self.to(j, "checks", "proved at %s" % j["head"][:7], proved=j["head"], checks_since=self.now())
+            elif kind == "plan":
+                j["plan_lines"] = why
+                self.end(j, "returned", "plan: proof: " + why[:180])
             elif kind == "fail" and j["round"] == 1:
                 self.to(j, "fix_wait", "proof failed: " + why[:140], review="The proof of this pull request failed: %s.\n%s" % (why, str(out)[-1300:]),
                         same_round=False)
