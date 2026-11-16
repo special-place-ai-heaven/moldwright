@@ -54,8 +54,7 @@ class CutShapeRunner(unittest.TestCase):
         text = planning.brief({"number": 1, "title": "t"}, "o/rerun")
         self.assertIn("uvx", text)
         self.assertIn("runs on the CI runner", text)
-        self.assertIn("no Run line that calls `uvx`", text)
-        self.assertIn("Factory tools CI job already runs ruff on `tools/factory`", text)
+        self.assertIn("which has no `uvx`: use none", text)
         cut_line = [l for l in text.splitlines() if "cut format of #333" in l][0]
         self.assertNotIn("uvx", cut_line)
 
