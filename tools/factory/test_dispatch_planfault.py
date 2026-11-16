@@ -1,7 +1,6 @@
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import proof
-import dispatch as D
 from test_dispatch_proof import ProofBase, met
 
 HEAD = "abcdef1234567890"
