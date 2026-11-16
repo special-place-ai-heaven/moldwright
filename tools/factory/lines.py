@@ -28,12 +28,22 @@ def live(d):
     return [j for j in d.jobs() if j["state"] != "waiting" and (j["state"] not in END or not j.get("relabelled"))]
 
 
+def named(gh, repo):
+    def call(args, *more, **kw):
+        a = list(args)
+        key = "--body" if a[:2] in (["issue", "comment"], ["pr", "comment"]) else "--comment" if a[:2] == ["issue", "close"] else None
+        if key in a and a.index(key) + 1 < len(a):
+            a[a.index(key) + 1] = "%s\n\nProject: %s" % (a[a.index(key) + 1], repo)
+        return gh(a, *more, **kw)
+    return call
+
+
 class Lines:
     def __init__(self, cfg, account, gh, now=time.time, make=None, mod=None):
         self.cfg, self.now, self.home, self.gh = cfg, now, cfg["repo"], gh
         self.results, self.checked = {}, {}
         self.mod = mod or __import__("dispatch")
-        self.make = make or (lambda c: self.mod.Dispatcher(c, account, gh, now))
+        self.make = make or (lambda c: self.mod.Dispatcher(c, account, named(gh, c["repo"]), now))
         self.lines, self.said, self.last = {}, set(), None
         self.kv = self.open(self.home).store
         self.active = self.home

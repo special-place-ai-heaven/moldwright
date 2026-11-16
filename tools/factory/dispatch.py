@@ -1398,7 +1398,8 @@ class Dispatcher:
                                            read_epic=self.read_epic, planning=self.planners.read(self.beats))
             snap.update(self.extra())
             self.answer = self.account("factory_report", {"snapshot": snap}, timeout=10)
-            digest.post(self.gh, self.store, self.home, snap.get("digest"), now)
+            told = snap.get("digest")
+            digest.post(self.gh, self.store, self.home, told if told is None else dict(told, project=self.repo), now)
             self.report_logged.clear()
         except Exception as e:  # noqa: BLE001 - the report only, never the beat
             text = str(e) if isinstance(e, Error) else type(e).__name__
