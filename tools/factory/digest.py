@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cutshape
 import limits as L
 import states
+import tokenstats
 
 STATIONS = (("build", "queued", "building"), ("review", "review_wait", "reviewing"),
             ("fix", "fix_wait", "fixing"), ("proof", "proof_wait", "proving"))
@@ -118,8 +119,16 @@ def measures(store, now):
                            sum(1 for t in rows if t["to_state"] == "fix_wait")))
     n = len(merged)
     tokens = 0
+    parents = set()
     for job, _, _ in merged:
         row = store.db.execute("SELECT COALESCE(SUM(tokens_in + tokens_out), 0) FROM fires WHERE job=?", (job,)).fetchone()
+        tokens += row[0]
+        found = store.get_job(job)
+        parent = cutshape.parse({"number": int(job), "body": found.get("body")})["parent"] if found and job.isdigit() else None
+        if parent is not None:
+            parents.add(parent)
+    for parent in sorted(parents):
+        row = store.db.execute("SELECT COALESCE(SUM(tokens_in + tokens_out), 0) FROM fires WHERE job=?", ("plan:%d" % parent,)).fetchone()
         tokens += row[0]
     return {"mergedPerHour": round(n / 24, 2), "leadTimeS": sum(m[1] for m in merged) / n if n else None,
             "firstPassYield": sum(1 for m in merged if m[2] == 0) / n if n else None,
@@ -127,9 +136,26 @@ def measures(store, now):
             "blocks": blocks, "tokensPerMerged": tokens / n if n else None}
 
 
+def planners(store, now):
+    jobs = []
+    for j in store.jobs():
+        rows = [t for t in store.transitions_of(str(j["issue"])) if t["from_state"] != t["to_state"]]
+        if not rows:
+            continue
+        parent = cutshape.parse({"number": int(j["issue"]), "body": j.get("body")})["parent"] if str(j["issue"]).isdigit() else None
+        jobs.append({"parent": parent, "first": L.ts(rows[0]["at"]), "states": [t["to_state"] for t in rows],
+                     "state": j["state"], "replans": j.get("replans") or 0})
+    fires = []
+    for r in store.db.execute("SELECT job, coworker, intent_at FROM fires WHERE stage='plan' AND job LIKE 'plan:%'"):
+        number = r[0].split(":", 1)[1]
+        if number.isdigit():
+            fires.append({"parent": int(number), "coworker": r[1], "at": L.ts(r[2])})
+    return tokenstats.planners(jobs, fires, now)
+
+
 def build(store, cfg, now):
     return {"stations": stations(store, now), "threads": threads(store),
-            "anomalies": anomalies(store, cfg, now), "measures": measures(store, now)}
+            "anomalies": anomalies(store, cfg, now), "measures": measures(store, now), "planners": planners(store, now)}
 
 
 def block(d):
