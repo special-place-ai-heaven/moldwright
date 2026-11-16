@@ -13,6 +13,8 @@ _TICK = re.compile(r"`([^`]*)`")
 _NUM = re.compile(r"#(\d+)")
 _PLAN = re.compile(r"^PLAN READY\b(.*)$")
 _DEV = re.compile(r"\bdev ([0-9a-f]{7,40})\b", re.I)
+_RUN = re.compile(r"(?ms)^\*\*Run\*\*.*?```[a-z]*\n(.*?)```")
+_UVX = re.compile(r"^(?:cd\s+\S+\s*&&\s*)?uvx\b")
 
 
 def _bad_path(p):
@@ -121,6 +123,12 @@ def parse(issue):
             dev = found.group(1).lower()
         else:
             errors.append("plan line: the PLAN READY line must name the dev commit as 'dev <sha>' (7 to 40 hex)")
+
+    run = _RUN.search("\n".join(lines))
+    if run:
+        for rl in (x.strip() for x in run.group(1).strip().split("\n")):
+            if _UVX.match(rl):
+                errors.append("run line: uvx is not on the CI runner; ruff runs in the Factory tools CI job, take the line out")
 
     return {"number": number, "deps": deps, "worker": worker, "paths": paths, "test": test, "through": through, "refactor": refactor, "parent": parent, "dev": dev, "errors": errors}
 
