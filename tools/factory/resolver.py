@@ -16,8 +16,9 @@ KV = "problems"
 LABEL = "factory-problem"
 OWNER = "owner"
 POOL = "resolver"
-KINDS = ("dev red", "idle line", "repeating error", "dead", "unreadable", "ended", "checkout failed", "no room")
+KINDS = ("dev red", "idle line", "repeating error", "dead", "unreadable", "ended", "checkout failed", "no room", "keeper silent")
 SYSTEMIC = KINDS[1:3]
+NO_RUN = ("keeper silent",)
 NOTICE = (inboxsort.ALARM,)
 NEW_MAX = 10
 OPEN_MAX = 30
@@ -114,7 +115,8 @@ class Resolver:
             self.open_issues = {i["number"] for i in json.loads(d.gh(
                 ["issue", "list", "-R", d.repo, "--state", "open", "--json", "number", "--limit", "1000"]) or "[]")}
         held = holds.active(d.store, d.now()) is not None
-        self.found = self.watch.find(jobs, d.refused, self.open_issues, line, d.now(), heard, since, held, d.no_room())
+        self.found = self.watch.find(jobs, d.refused, self.open_issues, line, d.now(), heard, since, held, d.no_room(),
+                                     machine=getattr(d, "machine", None))
         self.found.update(inboxsort.alarm(d.store.get_all("-")))
         self.tickets(d, self.found, resolve)
         if resolve:
@@ -209,7 +211,7 @@ class Resolver:
         if holds.active(d.store, d.now()) is not None:
             return
         for key, r in sorted(self.records(d).items(), key=lambda kr: rank(kr[0])):
-            if r["state"] != "resolve_wait" or key not in found:
+            if r["state"] != "resolve_wait" or key not in found or key in NO_RUN:
                 continue
             if r.get("sends", 0) >= SEND_MAX:
                 self.escalate(d, r, "ESCALATE: sent to HOUSE %d times and still there; the last run ended with: %s" % (SEND_MAX, r.get("line") or "-"))

@@ -1,3 +1,4 @@
+import machine as keeper
 import states
 
 ENDED = ("blocked", "failed", "rejected")
@@ -14,7 +15,7 @@ class Watch:
     def __init__(self):
         self.heard, self.idle, self.idle_line, self.repeats, self.repeat_line = [], 0, None, None, None
 
-    def find(self, jobs, refused, open_issues, line, now, texts, since="", held=False, room=None):
+    def find(self, jobs, refused, open_issues, line, now, texts, since="", held=False, room=None, machine=None):
         out = {"unreadable #%d" % n: "\n".join(e) for n, e in refused.items()}
         if room:
             out["no room"] = room
@@ -56,4 +57,8 @@ class Watch:
             self.repeat_line = "\n".join("%s (%d times in the last hour)" % (x, count[x]) for x in repeats)
         if repeats:
             out["repeating error"] = self.repeat_line
+        if machine is not None:
+            alarm = keeper.silent(machine)
+            if alarm:
+                out["keeper silent"] = alarm
         return out

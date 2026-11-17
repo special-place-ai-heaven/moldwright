@@ -19,6 +19,7 @@ import gatefiles
 import holds
 import inboxsort
 import instructions
+import machine
 import plancheck
 import planners
 import planning
@@ -1704,6 +1705,7 @@ class Dispatcher:
                 self.save(j, "pass failed")
                 if j["errors"] >= 20 and j["state"] not in END:
                     self.end(j, "failed", "20 passes in a row failed in state %s" % j["state"])
+        self.machine = machine.read(self.now(), machine.path()) if machine.path() else None
         heard, HEARD[:] = list(HEARD), []
         known = set(self.resolver.records(self, closed=True))
         try:
@@ -1781,7 +1783,7 @@ class Dispatcher:
             now = self.now()
             snap = snapshot.build_snapshot(self.store, self.cfg, now, holds.active(self.store, now), beat=self.beats,
                                            read_epic=self.read_epic, planning=self.planners.read(self.beats),
-                                           plan=renewal.plan(self.connections, now))
+                                           plan=renewal.plan(self.connections, now), machine=getattr(self, "machine", None))
             self.account("factory_report", {"snapshot": snap}, timeout=10)
             digest.post(self.gh, self.store, self.repo, snap.get("digest"), now)
             self.report_logged.clear()
