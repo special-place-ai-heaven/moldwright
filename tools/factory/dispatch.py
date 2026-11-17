@@ -389,6 +389,15 @@ def checks_verdict(runs):
     return "OK", None
 
 
+def failed_ids(runs):
+    latest = {}
+    for r in runs:
+        if r.get("id") is None:
+            continue
+        wid = r.get("workflow_id")
+        if wid not in latest or r["id"] > latest[wid]["id"]:
+            latest[wid] = r
+    return sorted(r["id"] for r in latest.values() if r.get("conclusion") in ("failure", "timed_out"))
 
 
 class Dispatcher:
@@ -1310,6 +1319,12 @@ class Dispatcher:
         data = json.loads(self.gh(["api", "repos/%s/actions/runs?head_sha=%s&per_page=100" % (self.repo, j["head"])]))
         runs = data.get("workflow_runs") or []
         verdict, why = checks_verdict(runs)
+        ids = failed_ids(runs) if verdict == "FAIL" else []
+        if ids and j.get("checks_rerun") != j["head"]:
+            for rid in ids:
+                self.gh(["run", "rerun", str(rid), "-R", self.repo, "--failed"])
+            j.update(checks_rerun=j["head"], checks_rerun_why=why, checks_since=self.now())
+            return self.save(j, "%s; its failed jobs run again once before the builder is asked" % why)
         if verdict == "FAIL":
             if j.get("red_head") != j["head"]:
                 self.note_failures(dict(j, agent=j.get("builder") or j.get("agent"), run_model=None, tier=None, brief_v=None),
@@ -1334,6 +1349,10 @@ class Dispatcher:
             if self.now() - j["checks_since"] > self.cfg.get("checks_timeout_s", 3600):
                 self.end(j, "failed", "checks not passed after %d s: %s" % (self.cfg.get("checks_timeout_s", 3600), why))
             return
+        if j.get("checks_rerun_why") and j.get("checks_rerun") == j["head"]:
+            flaky = j.pop("checks_rerun_why")
+            self.note_failures(j, ["flaky check"], "checks", "passed on a second run at %s: %s" % (j["head"][:7], flaky))
+            self.save(j, "passed on a second run at %s" % j["head"][:7])
         if self.cfg.get("proof") and j.get("proved") != j["head"]:
             return self.to(j, "proof_wait", "checks green at %s, waiting for a prover" % j["head"][:7])
         n = self.dev_hold(j)

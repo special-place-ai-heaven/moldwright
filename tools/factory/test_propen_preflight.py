@@ -211,6 +211,12 @@ class ChecksAfterPush(Base):
     def failures(self):
         return [tuple(r) for r in self.w.rows("SELECT kind, station FROM failures ORDER BY id")]
 
+    def to_checks(self):
+        super().to_checks()
+        job = self.d.store.jobs()[0]
+        job["checks_rerun"] = HEAD
+        self.d.store.put_job(str(job["issue"]), job["state"], job)
+
     def test_a_red_workflow_run_on_a_pushed_head_is_a_failure_event_of_the_build(self):
         self.to_checks()
         self.w.workflows[HEAD] = [dict(run("CI", conclusion="failure"), id=11)]
