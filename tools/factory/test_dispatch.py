@@ -42,6 +42,8 @@ class World:
         self.open_children, self.closed = [], []
         self.souls, self.soul_updates = {}, []
         self.send_args = []
+        self.branches = {}
+        self.compare_files = []
         self.check_runs = [{"name": n, "status": "completed", "conclusion": "success"} for n in ("Typecheck and lint", "No comments in code", "Factory tools tests")]
 
     @staticmethod
@@ -201,8 +203,19 @@ class World:
                                "mergeCommit": {"oid": self.merge_sha}})
         if a[:2] == ["pr", "list"]:
             return json.dumps(self.open_prs)
+        if a[0] == "api" and "/compare/dev..." in a[1]:
+            return json.dumps(self.compare_files)
         if a[0] == "api" and "/compare/" in a[1]:
             return "[]"
+        if a[0] == "api" and "/git/ref/heads/" in a[1]:
+            name = a[1].split("/git/ref/heads/")[1]
+            if name not in self.branches:
+                raise D.Error("gh api failed: exit 1: Not Found")
+            return json.dumps({"object": {"sha": self.branches[name]}})
+        if a[:2] == ["api", "-X"] and a[2] == "POST" and a[3].endswith("/git/refs"):
+            return "{}"
+        if a[:2] == ["pr", "create"]:
+            return "https://github.com/o/r/pull/42"
         if a[0] == "api" and "/timeline" in a[1]:
             return "[]"
         if a[0] == "api" and "/issues/" in a[1]:

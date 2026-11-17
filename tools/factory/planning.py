@@ -55,6 +55,8 @@ def brief_lines(issue, repo):
         "",
         "Compute on dev, before filing, every number a done-test asserts. Two children name the same file only when one depends on the other. The done-test calls the feature only through that public interface (a function the module exports, an HTTP route or a CLI command) and mock nothing of the module's own internals; only a boundary the repository already fakes (the network, the clock, the model) may be faked. Each Change says: add no comments in code.",
         "",
+        "Prove each child: see its done-test fail on dev, make it and every Run line pass, push that change as `plan/<child>` from the dev of its PLAN READY line, and add `**Proven branch**: plan/<child>`; the dispatcher then opens the pull request and sends no builder.",
+
         "The first job of a feature crosses every layer the feature needs and ends in a visible result (an API answer, a screen or a CLI line); later jobs widen it. A docs-only child states the same rule where it writes the format.",
         "",
         GOAL_LINE + " Each child says in one line which part and which milestone of that page it serves.",

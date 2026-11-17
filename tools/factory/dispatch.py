@@ -1,4 +1,4 @@
-import argparse, datetime, hashlib, json, os, re, signal, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import argparse, datetime, fnmatch, hashlib, json, os, re, signal, subprocess, sys, tempfile, time, urllib.error, urllib.request
 
 import acceptance
 import affinity
@@ -12,6 +12,7 @@ import control
 import cutshape
 import digest
 import escapes
+import factory
 import failures
 from gist import gist
 import followups
@@ -117,6 +118,11 @@ def issue_files(body):
     m = re.search(r"(?ms)^\*\*Files\*\*.*?\n(.*?)(?:\n\s*\n\*\*|\Z)", plain(body))
     paths = re.findall(r"`([^`\s]+)`", m.group(1)) if m else []
     return ", ".join(paths) or "the files the issue names"
+
+
+def proven_line(body):
+    m = re.search(r"(?m)^\*\*Proven branch\*\*:\s*(\S+)\s*$", plain(body))
+    return m.group(1) if m else None
 
 
 def issue_run(body):
@@ -275,12 +281,14 @@ def proof_brief(j, pr, head, asks):
 
 
 def fix_brief(j, pr, review):
+    where = ('Open a worktree for this job with `/data/tools/bin/wt new rerun %s p`, then in that folder run `git fetch origin chunk/%s-p && git reset --hard origin/chunk/%s-p`: the pull request was opened from the proven branch, and that is the code to fix.'
+             % (j["issue"], j["issue"], j["issue"]) if j.get("proven") else 'Fix exactly what blocks, in your open worktree for this job.')
     return "\n".join([
         'One fix round, sent by the dispatcher and not by Boss: pull request #%s of rerun (job #%s). The reviewer rejected it. You work alone: call no other coworker and send no question to Rob. The end of their review:' % (pr, j["issue"]),
         '',
         str(review)[-1500:],
         '',
-        'Fix exactly what blocks, in your open worktree for this job. Add or adjust the test, run only the test files you touched, commit and push to the same branch. No second pull request.',
+        where + ' Add or adjust the test, run only the test files you touched, commit and push to the same branch. No second pull request.',
         NO_COMMENTS,
         'A file you write that is not part of the change (the pull request body before pr-open, a note) goes into `/tmp`, carries the issue number in its name, and is removed once it is used. Never put one in your worktree or in the folder above it.',
         '',
@@ -1189,6 +1197,45 @@ class Dispatcher:
             log(j["issue"], "plan check skipped: %s" % e)
             return None
 
+    def open_proven(self, j, branch):
+        n = j["issue"]
+        if branch != "plan/%s" % n:
+            return self.end(j, "returned", "plan: **Proven branch** names %s, not plan/%s" % (branch, n), plan_lines=branch)
+        try:
+            sha = json.loads(self.gh(["api", "repos/%s/git/ref/heads/%s" % (self.repo, branch)]))["object"]["sha"]
+        except (Error, ValueError, KeyError, TypeError):
+            return self.end(j, "returned", "plan: the proven branch %s is not on GitHub" % branch, plan_lines=branch)
+        try:
+            changed = json.loads(self.gh(["api", "repos/%s/compare/dev...%s" % (self.repo, sha), "--jq", "[.files[].filename]"]))
+            if not isinstance(changed, list):
+                raise TypeError("compare answer is not a list")
+        except (Error, ValueError, TypeError) as e:
+            return self.end(j, "returned", "plan: the proven branch %s cannot be compared with dev: %s" % (branch, e), plan_lines=branch)
+        outside = [f for f in changed if not any(f == p or f.startswith(p.rstrip("/") + "/") or fnmatch.fnmatchcase(f, p) for p in j["paths"])]
+        if outside:
+            return self.end(j, "returned", "plan: the proven branch changes files outside Files: %s" % ", ".join(outside), plan_lines=branch)
+        head = "chunk/%s-p" % n
+        try:
+            self.gh(["api", "-X", "POST", "repos/%s/git/refs" % self.repo, "-f", "ref=refs/heads/%s" % head, "-f", "sha=%s" % sha])
+        except Error as e:
+            log(n, "branch %s not made (it may exist): %s" % (head, e))
+        lines = {
+            "## Done": "The change the planner proved at %s (%s), pushed unchanged." % (branch, sha[:7]),
+            "## Evidence": "The planner saw the done-test fail on dev and pass at %s; its Run lines are in the issue." % sha[:7],
+            "## Not changed": "Nothing: this pull request is the proven branch as it was pushed.",
+            "## Unsure": "None.",
+            "## Open": "None.",
+            "## Next owner and their done-test": "The reviewer checks the diff against the issue's done-test.",
+        }
+        body = "\n".join(["Job: %s#%s, chunk p" % (self.repo, n), ""]
+                         + [x for h in factory.PR_HEADS for x in (h, lines[h], "")] + ["Closes #%s" % n])
+        url = self.gh(["pr", "create", "-R", self.repo, "--base", "dev", "--head", head, "--title", j["title"], "--body", body]).strip()
+        m = re.search(r"/pull/(\d+)", url)
+        if not m:
+            return self.end(j, "returned", "plan: no pull request came from %s" % head, plan_lines=branch)
+        self.to(j, "review_wait", "pull request #%s from the proven branch %s" % (m.group(1), branch),
+                pr=int(m.group(1)), proven=sha, head_branch=head)
+
     def step(self, j):
         st = j["state"]
         if j.get("sending"):
@@ -1198,6 +1245,10 @@ class Dispatcher:
         if st in states.QUEUE and j.get("not_before") and self.now() < j["not_before"]:
             return
         if st == "queued":
+            if proven_line(j.get("body")):
+                if self.take(j):
+                    self.open_proven(j, proven_line(j.get("body")))
+                return
             got = self.free(j.get("worker", "coder"))
             if got and self.take(j):
                 self.start(j, got[0], "build", "building", copy=got[1], builder=got[0], stale=self.stale_files(j))
@@ -1267,6 +1318,10 @@ class Dispatcher:
                     self.to(j, "review_wait", why, verdict_asked=1)
             else:
                 self.end(j, "rejected", gist(verdict, 200) or last_line(out))
+        elif st == "fix_wait" and j.get("proven") and not j.get("builder"):
+            got = self.free(j.get("worker", "coder"))
+            if got and self.take(j):
+                self.start(j, got[0], "fix of #%s" % j["pr"], "fixing", copy=got[1], builder=got[0])
         elif st == "fix_wait":
             copy = self.free_copy_of(j["builder"], j)
             if copy is not None and self.take(j):
