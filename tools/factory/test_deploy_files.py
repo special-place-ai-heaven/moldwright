@@ -159,12 +159,17 @@ class OneDeploy(unittest.TestCase):
     def test_update_stops_the_old_dispatcher_after_the_drain_and_keeps_its_data(self):
         c = code(read("update.sh"))
         drained, stop, up = c.index("\nwait_drained\n"), c.index("docker stop -t 150 $OLD"), c.index("docker compose up -d")
+        self.assertLess(drained, c.index("docker compose build factory-dispatcher"))
+        self.assertLess(c.index("docker compose build factory-dispatcher"), stop)
+        self.assertLess(stop, c.index("        DISPATCHER=\n"))
         self.assertLess(drained, stop)
         self.assertLess(stop, up)
         self.assertIn("label=com.docker.compose.project=rerun-factory", c)
         self.assertLess(up, c.index("DISPATCHER=$(docker ps -qf name=factory-dispatcher", up))
-        for bad in ("docker volume rm", "down -v", "--volumes"):
+        self.assertLess(c.index("docker compose config -q"), c.index("touch /state/drain"))
+        for bad in ("docker volume rm", "down -v", "--volumes", "rm -v", "volume prune", "compose down"):
             self.assertNotIn(bad, c)
+        self.assertEqual([l for l in c.splitlines() if l.lstrip().startswith("docker compose") and "--yes" in l], [])
 
 
 class ClaudeScript(unittest.TestCase):
