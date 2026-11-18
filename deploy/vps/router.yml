@@ -1,0 +1,36 @@
+services:
+  router:
+    image: decolua/9router:0.5.119@sha256:38e58865ff111599f409f44430084ad0016c2ba530757ef545848d4bbe0cf007
+    environment:
+      DATA_DIR: /app/data
+      PORT: "20128"
+      HOSTNAME: 0.0.0.0
+      NODE_ENV: production
+      JWT_SECRET: ${ROUTER_JWT_SECRET:?run sudo sh deploy/vps/add-router.sh}
+      API_KEY_SECRET: ${ROUTER_API_KEY_SECRET:?run sudo sh deploy/vps/add-router.sh}
+      INITIAL_PASSWORD: ${ROUTER_PASSWORD:?run sudo sh deploy/vps/add-router.sh}
+      AUTH_COOKIE_SECURE: "true"
+      REQUIRE_API_KEY: "true"
+      ENABLE_REQUEST_LOGS: "false"
+      OBSERVABILITY_ENABLED: "false"
+    volumes:
+      - router-data:/app/data
+    labels:
+      - traefik.enable=true
+      - "traefik.http.routers.rerun-router.rule=Host(`${ROUTER_HOST:?run sudo sh deploy/vps/add-router.sh}`)"
+      - traefik.http.routers.rerun-router.entrypoints=websecure
+      - traefik.http.routers.rerun-router.tls.certresolver=letsencrypt
+      - traefik.http.services.rerun-router.loadbalancer.server.port=20128
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    restart: unless-stopped
+
+volumes:
+  router-data:
+    name: rerun_router-data
