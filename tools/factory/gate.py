@@ -277,7 +277,7 @@ def claims_line(ro, names, builder, others, verdict):
 
 def ledger_builders(full, jobrepo, jobn, ids, ref):
     import ledger as L
-    if F.repo_full(jobrepo) != full:
+    if F.short(F.repo_full(jobrepo)) != F.short(full):
         return [], "PR body names %s#%s but branch is %s" % (jobrepo, jobn, ref)
     mj = re.fullmatch(r"factory/job-(\d+)", ref)
     if mj and mj.group(1) != str(jobn):
