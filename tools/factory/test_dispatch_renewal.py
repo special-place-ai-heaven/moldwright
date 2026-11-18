@@ -186,13 +186,18 @@ class PlanWeek(unittest.TestCase):
         self.ahead(94, 6.9)
         self.assertEqual(self.d.pace_slots(15), 1)
 
-    def test_while_pacing_tier_models_stay_on_even_after_a_poor_yield(self):
+    def test_an_unreadable_reading_lifts_the_pacing(self):
         self.ahead(68, 7 * 0.694)
-        self.d.tiers_off = True
-        self.assertTrue(self.d.tiers_apply("low"))
-        self.d.pace = 1.0
-        self.assertFalse(self.d.tiers_apply("low"))
-        self.assertTrue(self.d.tiers_apply("senior"))
+        self.assertLess(self.d.pace, 1)
+        self.w.broken = True
+        self.w.clock += 30
+        self.beat()
+        self.assertEqual(self.d.pace_slots(15), 15)
+
+    def test_without_slots_set_nothing_is_paced_or_logged(self):
+        self.ahead(68, 7 * 0.694, slots=0)
+        self.assertIsNone(self.d.slot_quotas())
+        self.assertNotIn("pacing the plan week", self.out.getvalue())
 
 
 if __name__ == "__main__":
