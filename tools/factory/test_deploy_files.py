@@ -154,7 +154,9 @@ class Router(unittest.TestCase):
             self.assertNotIn(bad, self.c)
 
     def test_api_key_and_login_are_required_and_secrets_come_from_env(self):
-        for need in ('REQUIRE_API_KEY: "true"', 'AUTH_COOKIE_SECURE: "true"', "INITIAL_PASSWORD: ${ROUTER_PASSWORD:?",
+        for need in ('AUTH_COOKIE_SECURE: "true"', "TUNNEL_WORKER_URL: http://127.0.0.1:9", "BASE_URL: https://${ROUTER_HOST:?",
+                     "middlewares=rerun-router-admin", "ipallowlist.sourcerange=${ROUTER_ADMIN_CIDR:?",
+                     "read_only: true", "cap_drop:\n      - ALL", "pids_limit:", "INITIAL_PASSWORD: ${ROUTER_PASSWORD:?",
                      "JWT_SECRET: ${ROUTER_JWT_SECRET:?", "API_KEY_SECRET: ${ROUTER_API_KEY_SECRET:?", "no-new-privileges:true"):
             self.assertIn(need, self.c)
 
