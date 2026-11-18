@@ -1,4 +1,4 @@
-import json, os, sqlite3, subprocess, sys, tempfile, unittest
+import os, subprocess, sys, tempfile, unittest
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
