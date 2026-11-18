@@ -144,6 +144,29 @@ class Leftovers(unittest.TestCase):
             self.assertIn(need, c)
 
 
+class OneDeploy(unittest.TestCase):
+    def test_the_vps_project_carries_the_dispatcher(self):
+        self.assertTrue(code(read("docker-compose.vps.yml")).startswith("include:\n  - deploy/vps/factory-dispatcher.yml\n"))
+
+    def test_both_volumes_keep_the_names_they_had_before_the_move(self):
+        with open(os.path.join(VPS, "..", "..", "docker-compose.yml"), encoding="utf-8") as f:
+            self.assertIn("volumes:\n  engine-data:\n    name: rerun_engine-data\n", f.read())
+        self.assertIn("volumes:\n  factory-dispatcher-data:\n    name: rerun-factory_factory-dispatcher-data", code(read("factory-dispatcher.yml")))
+
+    def test_the_dispatcher_can_be_held_off(self):
+        self.assertIn("    deploy:\n      replicas: ${FACTORY_DISPATCHER:-1}\n", code(read("factory-dispatcher.yml")))
+
+    def test_update_stops_the_old_dispatcher_after_the_drain_and_keeps_its_data(self):
+        c = code(read("update.sh"))
+        drained, stop, up = c.index("\nwait_drained\n"), c.index("docker stop -t 150 $OLD"), c.index("docker compose up -d")
+        self.assertLess(drained, stop)
+        self.assertLess(stop, up)
+        self.assertIn("label=com.docker.compose.project=rerun-factory", c)
+        self.assertLess(up, c.index("DISPATCHER=$(docker ps -qf name=factory-dispatcher", up))
+        for bad in ("docker volume rm", "down -v", "--volumes"):
+            self.assertNotIn(bad, c)
+
+
 class ClaudeScript(unittest.TestCase):
     def setUp(self):
         self.c = code(read("dev-engine-claude.sh"))
