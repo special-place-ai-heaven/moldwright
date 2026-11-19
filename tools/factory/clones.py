@@ -1,4 +1,4 @@
-import contextlib, fcntl, json, os, shutil, sys, time
+import contextlib, fcntl, json, os, re, shutil, sys, time
 
 import factory as F
 import mirror as M
@@ -140,6 +140,11 @@ def make(full, repo, d, branch, base, default, start=None):
     must(M.git(["remote", "set-url", "origin", M.url(full)], cwd=tmp), "git remote set-url")
     step("origin")
     have = heads(tmp, "origin")
+    if branch != "chunk/" + d and start != branch:
+        if have is None:
+            transient("cannot list the branches on GitHub to check that %s is free" % branch)
+        if branch in have:
+            F.die("branch %s already exists on GitHub. Pick another --branch; nothing made." % branch)
     base = base or ("dev" if have is None or "dev" in have else "job/" + d.split("-")[0])
     if have is not None and base not in have:
         if base != "job/" + d.split("-")[0]:
@@ -164,13 +169,32 @@ def make(full, repo, d, branch, base, default, start=None):
     return tmp, base
 
 
-def new(full, issue, chunk, base, owner, default, start=None):
+def taken_by(repo, d, branch):
+    for f in sorted(os.listdir(F.STATE)) if os.path.isdir(F.STATE) else []:
+        m = re.fullmatch(r"wt__%s__(\d+-[a-z0-9]{1,12})\.json" % re.escape(repo), f)
+        if m and m.group(1) != d and F.reg_read(repo, m.group(1)).get("branch") == branch:
+            return m.group(1)
+    return None
+
+
+def new(full, issue, chunk, base, owner, default, start=None, branch=None):
     repo, d = F.short(full), "%s-%s" % (issue, chunk)
-    final, branch = os.path.join(F.WT, repo, d), "chunk/%s-%s" % (issue, chunk)
+    final = os.path.join(F.WT, repo, d)
     if not os.path.isdir(final) and len(F.wt_dirs()) >= CEILING:
         F.die("the ceiling of %d job folders under %s is reached. Nothing made; tell @boss." % (CEILING, F.WT))
     with lease(repo, issue, chunk):
-        if os.path.isdir(final) and not F.is_clone(final):
+        old = os.path.isdir(final) and not F.is_clone(final)
+        known = "chunk/" + d if old else F.reg_read(repo, d).get("branch")
+        if not known and os.path.isdir(final):
+            cur = M.git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd=final).stdout.strip()
+            known = cur if cur and not cur.startswith("chunk/") else None
+        if branch and known and branch != known:
+            F.die("job %s/%s is on branch %s; --branch %s refused. Nothing changed." % (repo, d, known, branch))
+        branch = branch or known or "chunk/" + d
+        other = taken_by(repo, d, branch) if branch != "chunk/" + d else None
+        if other:
+            F.die("branch %s is already used by %s/%s. Nothing made." % (branch, repo, other))
+        if old:
             print("EXISTS %s (an old worktree, branch %s). Work there." % (final, branch))
             return
         if not os.path.isdir(final):

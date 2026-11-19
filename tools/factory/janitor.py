@@ -102,7 +102,7 @@ def settles(path, head, x):
 
 def verdict(full, repo, d, path):
     issue, chunk = DIR.fullmatch(d).groups()
-    branch = "chunk/" + d
+    branch = F.wt_branch(repo, d)
     if busy(path):
         return "KEEP", "a process works inside"
     gh = github(full, issue, branch)
@@ -151,7 +151,7 @@ def janitor(apply):
             n[v] += 1
             if v == "REMOVE" and apply:
                 dst = to_trash(path, repo, d)
-                for f in (F.marker(repo, "chunk/" + d), F.reg_path(repo, d)):
+                for f in (F.marker(repo, F.wt_branch(repo, d)), F.reg_path(repo, d)):
                     if os.path.exists(f):
                         os.remove(f)
                 why += "; moved to %s" % os.path.basename(dst)
@@ -209,7 +209,7 @@ def git_locks(path, older_h):
 
 def check_one(full, repo, d, path, apply):
     issue, chunk = DIR.fullmatch(d).groups()
-    branch = "chunk/" + d
+    branch = F.wt_branch(repo, d)
     if C.M.git(["rev-parse", "--git-dir"], cwd=path).returncode or C.M.git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd=path).returncode:
         if apply:
             dst = to_trash(path, repo, d, "broken-")
@@ -246,7 +246,7 @@ def rebuild_missing(apply):
         rec = F.reg_read(repo, d)
         if rec.get("checkout") != "clone" or os.path.exists(os.path.join(F.WT, repo, d)):
             continue
-        full, branch = rec.get("repo") or F.repo_full(repo), "chunk/" + d
+        full, branch = rec.get("repo") or F.repo_full(repo), rec.get("branch") or "chunk/" + d
         gh = github(full, rec.get("issue"), branch)
         if gh is None or gh[1].get("state") == "closed" or any(x.get("state", "").upper() == "MERGED" for x in gh[0]):
             continue

@@ -22,8 +22,8 @@ class JanitorCase(CloneCase):
             p.start()
             self.addCleanup(p.stop)
 
-    def job(self, chunk="1", hours=2):
-        code, out = self.new(chunk)
+    def job(self, chunk="1", hours=2, branch=None):
+        code, out = self.new(chunk) if not branch else self.call(lambda _: self.C.new(FULL, "7", chunk, None, "t", "main", branch=branch), [])
         self.assertEqual(code, 0, out)
         p = self.folder(chunk)
         for k, v in (("user.name", "t"), ("user.email", "t@localhost"), ("commit.gpgsign", "false")):
@@ -367,3 +367,71 @@ class Doctor(JanitorCase):
             code, out = self.run_j("doctor", "--apply")
         self.assertEqual(code, 1, out)
         self.assertIn("DOCTOR FAULT rerun/7-1: boom", out)
+
+
+class NamedBranch(JanitorCase):
+    def make(self, chunk, branch):
+        return self.call(lambda _: self.C.new(FULL, "7", chunk, None, "t", "main", branch=branch), [])
+
+    def test_a_named_branch_is_made_recorded_and_refused_when_taken(self):
+        p = self.job(branch="factory/roster")
+        self.assertEqual(T.git(p, "rev-parse", "--abbrev-ref", "HEAD"), "factory/roster")
+        self.assertEqual(T.git(p, "config", "branch.factory/roster.factorybase"), "dev")
+        self.assertEqual(F.reg_read("rerun", "7-1")["branch"], "factory/roster")
+        code, out = self.make("2", "factory/roster")
+        self.assertEqual(code, 2, out)
+        self.assertIn("already used by rerun/7-1", out)
+        self.assertFalse(os.path.exists(self.folder("2")))
+        T.git(self.origin, "update-ref", "refs/heads/factory/taken", T.git(self.origin, "rev-parse", "dev"))
+        code, out = self.make("3", "factory/taken")
+        self.assertEqual(code, 2, out)
+        self.assertIn("already exists on GitHub", out)
+        self.assertFalse(os.path.exists(self.folder("3")))
+        code, out = self.make("1", "factory/other")
+        self.assertEqual(code, 2, out)
+        self.assertIn("is on branch factory/roster", out)
+
+    def test_a_named_folder_killed_before_its_record_continues_on_its_branch(self):
+        def kill(n):
+            if n == "renamed":
+                raise RuntimeError("killed")
+            return n
+        with mock.patch.object(self.C, "step", kill):
+            self.assertRaises(RuntimeError, self.make, "1", "factory/roster")
+        self.assertEqual(F.reg_read("rerun", "7-1"), {})
+        code, out = self.call(lambda _: self.C.new(FULL, "7", "1", None, "t", "main"), [])
+        self.assertEqual(code, 0, out)
+        p = self.folder()
+        self.assertEqual(T.git(p, "rev-parse", "--abbrev-ref", "HEAD"), "factory/roster")
+        self.assertEqual(F.reg_read("rerun", "7-1")["branch"], "factory/roster")
+        self.assertTrue(os.path.isfile(os.path.join(p, ".git", "factory-ready")))
+
+    def test_an_open_pull_request_on_a_named_branch_keeps_it(self):
+        p = self.job(branch="factory/roster")
+        sha = self.commit(p, "w.txt")
+        T.git(p, "push", "--quiet", "origin", "factory/roster")
+        self.issue = {"state": "closed"}
+        with mock.patch.object(F, "pr_lookup", lambda full, br: [{"number": 9, "state": "OPEN", "headRefOid": sha}] if br == "factory/roster" else []):
+            code, out = self.run_j("janitor", "--apply")
+        self.assertIn("KEEP   rerun/7-1  pull request open", out)
+        self.assertTrue(os.path.isdir(p))
+
+    def test_the_doctor_reads_the_branch_of_a_named_folder_from_its_record(self):
+        p = self.job(branch="factory/roster")
+        code, out = self.run_j("doctor")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("BRANCH of", out)
+        T.git(p, "checkout", "--quiet", "-b", "factory/other")
+        code, out = self.run_j("doctor")
+        self.assertIn("BRANCH of rerun/7-1 is factory/other, not factory/roster", out)
+
+    def test_a_broken_clone_of_a_named_branch_job_is_rebuilt_on_that_branch(self):
+        p = self.job(branch="factory/roster")
+        sha = self.commit(p, "w.txt")
+        T.git(p, "push", "--quiet", "origin", "factory/roster")
+        os.remove(os.path.join(p, ".git", "HEAD"))
+        code, out = self.run_j("doctor", "--apply")
+        self.assertEqual(code, 0, out)
+        self.assertIn("REBUILT rerun/7-1 from the pushed branch factory/roster", out)
+        self.assertEqual(T.git(p, "rev-parse", "--abbrev-ref", "HEAD"), "factory/roster")
+        self.assertEqual(T.git(p, "rev-parse", "HEAD"), sha)

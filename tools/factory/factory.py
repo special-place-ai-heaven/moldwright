@@ -277,6 +277,10 @@ def reg_read(repo, d):
         return {}
 
 
+def wt_branch(repo, d):
+    return reg_read(repo, d).get("branch") or "chunk/" + d
+
+
 def age_h(rec):
     try:
         return (time.time() - calendar.timegm(time.strptime(rec["created"], "%Y-%m-%dT%H:%M:%SZ"))) / 3600
