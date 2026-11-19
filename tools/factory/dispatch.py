@@ -165,6 +165,19 @@ TAIL = "\n".join([
     'The "Code tools" section of your own instructions decides which tools you have, and SymForge is off for everyone. Where the line above names a tool you do not have, your instructions win.',
 ])
 
+SLEEP_KIND = "sleep in build run"
+FIX_HOLD_S = 1800
+NO_WAIT = ('Do not wait for the checks after the push: the dispatcher waits for them and sends a red result back to you as a fix round. '
+           'This replaces the CI-waiting step of your own instructions for this job, even when pr-open prints a `Next: ci-wait` line: '
+           'no `ci-wait`, no `gh run watch`. When pr-open refuses the push because a workflow run of the head is not finished, do not wait '
+           'and do not try again: end with `BLOCKED: TRANSIENT: ci run of the head not finished`; the dispatcher sends the round again once '
+           'that run has ended.')
+NO_SLEEP = ('Never put `sleep` in a shell call and never retry a refused command in a loop: the dispatcher counts every build or fix run with '
+            'a sleep as a failure. When a factory tool prints a line that starts with `TRANSIENT:`, end at once with `BLOCKED: <that line>`; '
+            'the dispatcher holds sending and gives the job out again.')
+PACKET_LINE = ('Find your worktree with one shell call: `/data/tools/bin/packet %s %s`: its `worktree:` line names the folder. '
+               'When it says `none on this server`, end with `BLOCKED: worktree gone`.')
+
 NO_COMMENTS = ('Rob\'s rule, 2026-11-14: "any new work as a rule should NEVER make comments in code." Add no comment to any code you write: '
                'no `//` or `/* */` comments, no `#` comment lines, no docstrings. Tool directives that a linter or test runner reads '
                '(`eslint-disable-next-line`, `@vitest-environment`, `@ts-expect-error`, `noqa`) stay. An explanation that matters goes into the '
@@ -205,6 +218,8 @@ def build_brief(j):
         NO_COMMENTS,
         '3. Run only the test files you touched, with the worker pool capped at 2. No full suite. Then run the lint and the type check of every package the change touched (`pnpm --filter <package> lint`, `pnpm --filter <package> ts-check`), and for Python files under `tools/factory` run `ruff check` on them where ruff is installed; fix what they report before opening the pull request. Lint warnings do not block; lint errors do. Give the lint and the type check each a shell call of their own, with `timeoutMs` set above the default of 120000 (the limit is 600000); never chain them with the commit or `pr-open`.',
         '4. Commit, push, and open one pull request into dev. Title: the issue title plus "(#%s)". Body: what changed, which test failed before and passes now, and the line "Closes #%s".' % (j["issue"], j["issue"]),
+        NO_WAIT,
+        NO_SLEEP,
         '5. Leave the worktree open. It is closed after the merge by a sweep.',
         'A file you write that is not part of the change (the pull request body before pr-open, a note) goes into `/tmp`, carries the issue number in its name, and is removed once it is used. Never put one in your worktree or in the folder above it.',
         '',
@@ -318,7 +333,10 @@ def fix_brief(j, pr, review):
         '',
         str(review)[-1500:],
         '',
+        *([] if j.get("proven") else [PACKET_LINE % (where(j), pr)]),
         fix_here if j.get("proven") else fix_other,
+        NO_WAIT,
+        NO_SLEEP,
         NO_COMMENTS,
         'A file you write that is not part of the change (the pull request body before pr-open, a note) goes into `/tmp`, carries the issue number in its name, and is removed once it is used. Never put one in your worktree or in the folder above it.',
         '',
@@ -341,7 +359,10 @@ def senior_brief(j, pr, review):
         '',
         str(review)[-1500:],
         '',
+        PACKET_LINE % (where(j), pr),
         'In your open worktree for this job, first run the Run lines of the issue (%s) and read what fails. Then fix all of the findings above in one change: add or adjust the tests, run the test files you touched and the Run lines again, commit and push to the same branch. No second pull request.' % issue_run(j.get("body")),
+        NO_WAIT,
+        NO_SLEEP,
         NO_COMMENTS,
         'A file you write that is not part of the change (the pull request body before pr-open, a note) goes into `/tmp`, carries the issue number in its name, and is removed once it is used. Never put one in your worktree or in the folder above it.',
         '',
@@ -1152,6 +1173,10 @@ class Dispatcher:
         if since is None:
             since = iso(self.now())
             self.store.set("-", "tools_since", since)
+        sleep_since = self.store.get_all("-").get("sleep_since")
+        if sleep_since is None:
+            sleep_since = iso(self.now())
+            self.store.set("-", "sleep_since", sleep_since)
         tries = self.__dict__.setdefault("tool_tries", {})
         rows = self.store.db.execute("SELECT f.run_id, f.job, f.stage, f.coworker, f.model, f.intent_at FROM fires f WHERE f.tools_read IS NULL "
                                      "AND f.run_id IS NOT NULL AND f.status IN ('done','error','cancelled') "
@@ -1175,8 +1200,30 @@ class Dispatcher:
                 self.store.tools_seen(run, "none")
                 continue
             c = toolcalls.count(r["toolCalls"])
-            self.store.tools_seen(run, "ok", c)
+            failure = None
+            if c["sleep"] > 0 and limits.ts(intent_at) >= limits.ts(sleep_since):
+                failure = {"kind": SLEEP_KIND, "job": job, "station": "build" if stage.startswith("build") else "fix", "coworker": who,
+                           "model": model, "reason": "%d of %d shell calls slept" % (c["sleep"], c["shell"])}
+            self.store.tools_seen(run, "ok", c, failure)
             log(job, "tools of run %s: %d shell calls, %d only read, %d slept" % (run, c["shell"], c["read"], c["sleep"]))
+
+    def head_running(self, j):
+        head = j.get("head")
+        if not head:
+            return False
+        hold = j.get("fix_hold") or [None, 0]
+        if hold[0] != head:
+            hold = [head, self.now()]
+            j["fix_hold"] = hold
+            self.save(j, "fix round held while a workflow run of %s is not finished" % head[:7])
+        if self.now() - hold[1] > FIX_HOLD_S:
+            return False
+        try:
+            runs = json.loads(self.gh(["api", "repos/%s/actions/runs?head_sha=%s&per_page=100" % (self.repo, head)])).get("workflow_runs") or []
+        except (Error, ValueError, AttributeError) as e:
+            log(j["issue"], "runs of %s not read: %s" % (head[:7], e))
+            return False
+        return bool(ciwait.unfinished(runs))
 
     def close_replans(self):
         for j in self.jobs():
@@ -1508,6 +1555,8 @@ class Dispatcher:
                     self.to(j, "review_wait", why, verdict_asked=1)
             else:
                 self.end(j, "rejected", gist(verdict, 200) or last_line(out))
+        elif st == "fix_wait" and self.head_running(j):
+            return
         elif st == "fix_wait" and j.get("proven") and not j.get("builder"):
             got = self.free(j.get("worker", "coder"))
             if got and self.take(j):
@@ -1801,7 +1850,7 @@ class Dispatcher:
     def verdict(self, j):
         n = str(j["issue"])
         moves = [t["to_state"] for t in self.store.transitions_of(n) if t["from_state"] != t["to_state"]]
-        last = dict(self.store.db.execute("SELECT station, reason FROM failures WHERE job=? AND kind!='ended unsolvable' ORDER BY id", (n,)).fetchall())
+        last = dict(self.store.db.execute("SELECT station, reason FROM failures WHERE job=? AND kind NOT IN ('ended unsolvable', ?) ORDER BY id", (n, SLEEP_KIND)).fetchall())
         return "\n".join([
             "The factory dispatcher ended this job as unsolvable: %s." % (j.get("reason") or "-"),
             "It had %d builds, %d fix rounds, %d reviews, %d proofs, %d takes and %d re-plans." % (
