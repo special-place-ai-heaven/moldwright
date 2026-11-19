@@ -1990,6 +1990,15 @@ class Dispatcher:
     def read_epic(self, n):
         return json.loads(self.gh(["issue", "view", str(n), "-R", self.repo, "--json", "title,labels"]))
 
+    def status(self, snap):
+        d = snap.get("digest")
+        if d is None:
+            return None
+        plans = {str(n): r.get("state") for n, r in sorted(self.station.records().items())
+                 if r.get("state") not in planning.ENDED}
+        free = len(pools.free_copies(self.cfg, "planner", self.station.running()))
+        return dict(d, holds=snap.get("holds", []), plans=plans, planner_free=free)
+
     def report_line(self):
         self.answer = None
         try:
@@ -2000,7 +2009,7 @@ class Dispatcher:
             digest.alarm(self.store, snap.get("digest"), now)
             snap.update(self.extra())
             self.answer = self.account("factory_report", {"snapshot": snap}, timeout=10)
-            digest.post(self.gh, self.store, self.home, snap.get("digest"), now)
+            digest.post(self.gh, self.store, self.home, self.status(snap), now)
             self.report_logged.clear()
         except Exception as e:  # noqa: BLE001 - the report only, never the beat
             text = str(e) if isinstance(e, Error) else type(e).__name__
