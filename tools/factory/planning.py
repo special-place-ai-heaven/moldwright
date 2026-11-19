@@ -1097,7 +1097,11 @@ class Station:
         issues = json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "open", "--json",
                                      "number,title,labels,createdAt", "--limit", "100"]))
         records = self.records()
-        if [i for i in issues if REPLAN in names(i) and self.again(i, records.get(i["number"]))]:
+        reset = False
+        for i in issues:
+            if REPLAN in names(i) and self.again(i, records.get(i["number"])):
+                reset = True
+        if reset:
             records = self.records()
         for item in unplanned(issues):
             if room <= 0:
@@ -1125,17 +1129,12 @@ class Station:
         state = (row or {}).get("state", "unsent")
         if (held & SKIP) - CLEARED or state not in ENDED + ("unsent",) or self.open_children(n):
             return False
-        try:
-            self.gh(["issue", "edit", str(n), "-R", self.repo, "--remove-label", REPLAN])
-        except Exception:
-            return False
-        gone = {REPLAN}
-        for name in sorted(held & CLEARED):
+        gone = sorted(held & CLEARED) + [REPLAN]
+        for name in gone:
             try:
                 self.gh(["issue", "edit", str(n), "-R", self.repo, "--remove-label", name])
-                gone.add(name)
             except Exception:
-                pass
+                return False
         if state != "unsent":
             self.store.forget("plan:%d" % n)
         item["labels"] = [label for label in item.get("labels", []) if label.get("name") not in gone]

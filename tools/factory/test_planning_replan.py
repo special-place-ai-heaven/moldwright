@@ -1,4 +1,4 @@
-import json, os, sys, unittest
+import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import planning
 import test_planning_start as T
@@ -51,7 +51,7 @@ class Replan(unittest.TestCase):
             rec = r.store.get_all("plan:12")
             for stale in ("review_round", "revisions", "retried", "open_notes", "resent"):
                 self.assertNotIn(stale, rec)
-            self.assertEqual(removed(r)[:3], [planning.REPLAN, "factory-blocked", "likely-fixed"])
+            self.assertEqual(removed(r)[:3], ["factory-blocked", "likely-fixed", planning.REPLAN])
 
     def test_a_reset_plan_does_not_take_over_the_old_run(self):
         r = rig(["P0", planning.REPLAN], "blocked")
@@ -86,11 +86,20 @@ class Replan(unittest.TestCase):
         self.assertEqual(r.sends, [])
         self.assertNotIn(planning.REPLAN, removed(r))
 
+    def test_a_failed_removal_of_another_label_keeps_the_record(self):
+        r = rig(["P0", planning.REPLAN, "factory-blocked"], "blocked", refuse=["factory-blocked"])
+        r.station.once(1)
+        self.assertEqual(r.sends, [])
+        self.assertNotIn(planning.REPLAN, removed(r))
+        self.assertEqual(r.store.get_all("plan:12")["review_round"], "3")
+
     def test_an_unsent_record_keeps_its_takeover_check(self):
         r = rig(["P0", planning.REPLAN], "unsent")
+        r.runs.append({"runId": "run9", "agentId": T.P1, "startedAt": "1970-01-01T00:00:05Z"})
         r.station.once(1)
-        self.assertEqual(removed(r)[0], planning.REPLAN)
-        self.assertEqual(json.loads(r.store.get_all("plan:12")["sent_answers"]), [])
+        self.assertEqual(removed(r), [planning.REPLAN])
+        self.assertEqual(r.sends, [])
+        self.assertEqual(r.store.get_all("plan:12")["run"], "run9")
 
 
 if __name__ == "__main__":
