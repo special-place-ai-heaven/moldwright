@@ -122,6 +122,8 @@ const factoryMachineSchema = z.object({
     housekeeping: z.array(z.object({ cmd: z.string().max(40), rc: z.number().int(), s: count }).strict()).max(10),
 }).strict()
 
+const factoryToolWindowSchema = z.object({ runs: count, measured: count, unread: count, shellPerRun: z.number().min(0).nullable(), readShare: z.number().min(0).max(1).nullable(), sleepRuns: count }).strict()
+
 export const factoryDigestSchema = z.object({
     stations: z.array(z.object({
         station: z.string().max(20),
@@ -154,6 +156,7 @@ export const factoryDigestSchema = z.object({
     }),
     bar: z.object({ day: factoryBarWindowSchema, week: factoryBarWindowSchema }).optional(),
     cost: factoryCostSchema.optional(),
+    tools: z.object({ since: z.string().max(40).nullable(), before: factoryToolWindowSchema, day: factoryToolWindowSchema }).strict().optional(),
     causes: z.object({
         groups: z.array(z.object({
             group: z.string().max(80),

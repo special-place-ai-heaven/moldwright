@@ -210,4 +210,18 @@ describe('factory snapshot digest', () => {
         expect(g([{ ...groups[0], group: 'a'.repeat(80) }])).toBe(true)
         expect(g([{ ...groups[0], group: 'a'.repeat(81) }])).toBe(false)
     })
+    it('keeps the tool use of the digest, and accepts it empty', () => {
+        const W1 = { runs: 1, measured: 1, unread: 0, shellPerRun: 10, readShare: 0.4, sleepRuns: 1 }
+        const W2 = { runs: 4, measured: 3, unread: 1, shellPerRun: 6.67, readShare: 0.5, sleepRuns: 1 }
+        const T = { since: '2026-11-19T10:00:00Z', before: W1, day: W2 }
+        expect(factorySnapshotSchema.parse(withDigest({ ...digest(), tools: T })).digest?.tools).toEqual(T)
+        const Z = { runs: 0, measured: 0, unread: 0, shellPerRun: null, readShare: null, sleepRuns: 0 }
+        expect(ok({ ...digest(), tools: { since: null, before: Z, day: Z } })).toBe(true)
+    })
+
+    it('refuses a read share above 1 and an extra key in a tool window', () => {
+        const W = { runs: 1, measured: 1, unread: 0, shellPerRun: 10, readShare: 0.4, sleepRuns: 1 }
+        expect(ok({ ...digest(), tools: { since: null, before: W, day: { ...W, readShare: 1.5 } } })).toBe(false)
+        expect(ok({ ...digest(), tools: { since: null, before: W, day: { ...W, extra: 1 } } })).toBe(false)
+    })
 })

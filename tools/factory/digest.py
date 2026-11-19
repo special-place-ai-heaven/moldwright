@@ -382,12 +382,37 @@ def issues(store, now):
     return {"open": counts, "classifiedToday": since("at"), "joinedToday": since("joined")}
 
 
+def tool_use(store, now):
+    rows, seen = [], set()
+    for r in store.db.execute("SELECT run_id, intent_at, ended_at, tools_read, shell_calls, read_calls, sleep_calls FROM fires "
+                              "WHERE run_id IS NOT NULL AND (stage LIKE 'build%' OR stage LIKE 'fix%') "
+                              "AND status IN ('done','error','cancelled') AND ended_at IS NOT NULL ORDER BY id"):
+        if r["run_id"] not in seen:
+            seen.add(r["run_id"])
+            rows.append(r)
+    since = store.get_all("-").get("tools_since")
+    start = L.ts(since) if since is not None else None
+    before = [r for r in rows if start is not None and L.ts(r["intent_at"]) < start
+              and 0 <= start - L.ts(r["ended_at"]) <= MEASURE_WINDOW_S]
+    day = [r for r in rows if (start is None or L.ts(r["intent_at"]) >= start) and 0 <= now - L.ts(r["ended_at"]) <= MEASURE_WINDOW_S]
+
+    def fig(part):
+        m = [r for r in part if r["tools_read"] == "ok"]
+        shell = sum(r["shell_calls"] or 0 for r in m)
+        return {"runs": len(part), "measured": len(m), "unread": sum(1 for r in part if r["tools_read"] in ("refused", "none")),
+                "shellPerRun": round(shell / len(m), 2) if m else None,
+                "readShare": round(sum(r["read_calls"] or 0 for r in m) / shell, 3) if shell else None,
+                "sleepRuns": sum(1 for r in m if (r["sleep_calls"] or 0) > 0)}
+    return {"since": since, "before": fig(before), "day": fig(day)}
+
+
 def build(store, cfg, now, plan=None):
     table = weights.load()
     return {"stations": stations(store, now), "threads": threads(store),
             "anomalies": anomalies(store, cfg, now), "measures": measures(store, now, table), "planners": planners(store, now),
             "issues": issues(store, now),
-            "bar": bar(store, now, table), "causes": causes(store, now), "cost": cost(store, now, table, plan)}
+            "bar": bar(store, now, table), "causes": causes(store, now), "cost": cost(store, now, table, plan),
+            "tools": tool_use(store, now)}
 
 
 def block(d):
