@@ -726,7 +726,8 @@ class Dispatcher:
         if all(r <= 0 for r in rooms.values()):
             return
         issues = json.loads(self.gh(["issue", "list", "-R", self.repo, "--label", self.label, "--state", "open",
-                                     "--json", "number,title,body", "--limit", "100"]))
+                                     "--json", "number,title,labels,body", "--limit", "100"]))
+        issues = [i for i in issues if PAUSED not in {x.get("name") for x in i.get("labels") or [] if isinstance(x, dict)}]
         for i in issues:
             old = self.store.get_job(str(i["number"]))
             if old and old["state"] != "waiting" and not (old["state"] in END and old.get("relabelled")):

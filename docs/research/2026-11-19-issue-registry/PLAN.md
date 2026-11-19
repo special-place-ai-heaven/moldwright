@@ -70,7 +70,7 @@ The name `returned` is already a build-job end state, so the handover statuses u
 
 ## Slices (one PR each in `tools/factory`, live without a deploy)
 
-0. **`factory-paused` is never built** (a bug fix first, test first). The dispatcher's intake and queue skip a job labelled `factory-paused`. Today only planning honours it.
+0. **`factory-paused` is never built** (a bug fix first, test first). Intake does not take in a parked issue, and a job parked after it was queued is not built. A second try of a build already running (`failed_attempt`) still goes ahead: it is a retry, not a new build. Before this, only planning honoured the label.
 1. **`registry.py`, read-only, no GitHub calls.**
    - `read(store)` makes one pass over the ledger: jobs, the newest real move per job (`MAX(id) … WHERE from_state != to_state GROUP BY job`), the `plan:`, `recheck:`, `accept:`, `instr:` and `classify:` records, and the newest fire per job.
    - `rows(data, now)` is pure.
