@@ -173,6 +173,8 @@ class World:
             return json.dumps(self.open_children)
         if a[:2] == ["issue", "list"] and "Factory follow-ups inbox in:title" in a:
             return json.dumps([{"number": p["number"], "title": p["title"]} for p in self.problems if p["state"] == "OPEN"])
+        if a[:2] == ["issue", "list"] and "--label" in a and a[a.index("--label") + 1] == "factory-paused":
+            return json.dumps([{"number": i["number"]} for i in self.issues if "factory-paused" in i.get("labels", [])])
         if a[:2] == ["issue", "list"] and "--label" in a and a[a.index("--label") + 1] == "instructions":
             return json.dumps([{"number": i["number"], "title": i["title"], "body": i["body"]} for i in self.issues
                                if "instructions" in i.get("labels", []) and i.get("state", "OPEN") == "OPEN"])
