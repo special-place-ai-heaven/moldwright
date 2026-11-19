@@ -61,8 +61,10 @@ class Status(unittest.TestCase):
         self.planner()
         for k, v in (("state", "running"), ("agent", "p1"), ("copy", "2"), ("started", "2026-11-18T17:00:00Z")):
             self.d.store.set("recheck:40", k, v)
+        self.d.names = D.pools.names(self.d.cfg)
         out = self.d.status({"digest": {}, "holds": []})
         self.assertEqual(out["planner_free"], 0)
+        self.assertEqual({h["by"] for h in out["planner_holders"]}, {"Boss"})
         self.assertEqual([(h["job"], h["state"], h["since"]) for h in out["planner_holders"]],
                          [("plan:12", "reviewing", "2026-11-19T00:00:00Z"), ("recheck:40", "running", "2026-11-18T17:00:00Z")])
 
@@ -76,6 +78,25 @@ class Status(unittest.TestCase):
     def test_the_digest_goes_out_when_the_app_report_fails(self):
         self.make(fail=RuntimeError("down"))
         got = self.capture()
+        self.once()
+        posted = [d for d in got if d is not None]
+        self.assertEqual(len(posted), 1)
+        self.assertEqual(posted[0]["report_error"], "RuntimeError")
+        self.assertIn("stations", posted[0])
+
+    def test_an_unreadable_hold_does_not_stop_the_report(self):
+        self.make()
+        got = self.capture()
+        real = D.holds.active
+        calls = []
+
+        def active(store, now):
+            calls.append(now)
+            if len(calls) > 1:
+                raise RuntimeError("db")
+            return None
+        D.holds.active = active
+        self.addCleanup(setattr, D.holds, "active", real)
         self.once()
         self.assertTrue([d for d in got if d is not None])
 
@@ -93,6 +114,7 @@ class Status(unittest.TestCase):
         posted = [d for d in got if d is not None]
         self.assertEqual(posted[-1]["report_error"], "KeyError")
         self.assertEqual(posted[-1]["holds"][0]["kind"], "update")
+        self.assertIn("planner_free", posted[-1])
 
     def test_the_app_snapshot_digest_is_left_alone(self):
         self.make()
