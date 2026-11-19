@@ -38,6 +38,8 @@ STAGES = {"planning": "plan", "running": "plan", "cutting": "cut", "reviewing": 
 AGAIN = {"cut": "planned", "review": "planned", "repair": "repair"}
 QUESTION_LABEL = "factory-question"
 REPLAN = "factory-replan"
+ENDED = ("blocked", "lost", "cut")
+CLEARED = frozenset(("factory-plan", "factory-blocked", "factory-unsolvable", "likely-fixed"))
 ANSWER = re.compile(r"(?mi)^ANSWER:[ \t]*(.+)$")
 ISSUE_URL = re.compile(r"/issues/(\d+)\b")
 MAX_QUESTIONS = 3
@@ -1095,10 +1097,8 @@ class Station:
         issues = json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "open", "--json",
                                      "number,title,labels,createdAt", "--limit", "100"]))
         records = self.records()
-        for item in issues:
-            if REPLAN in names(item) and records.get(item["number"], {}).get("state") not in LIVE:
-                self.again(item)
-                records.pop(item["number"], None)
+        if [i for i in issues if REPLAN in names(i) and self.again(i, records.get(i["number"]))]:
+            records = self.records()
         for item in unplanned(issues):
             if room <= 0:
                 break
@@ -1119,17 +1119,27 @@ class Station:
             self.send(item, got, records.get(n))
             room -= 1
 
-    def again(self, item):
+    def again(self, item, row):
         n = item["number"]
-        for k, v in (("state", "unsent"), ("agent", ""), ("intent", ""), ("handover", ""), ("resent", "[]"), ("review_fails", "0")):
-            self.store.set("plan:%d" % n, k, v)
-        gone = {REPLAN, LABEL, "factory-blocked", "factory-unsolvable"} & names(item)
-        for name in sorted(gone):
+        held = names(item)
+        state = (row or {}).get("state", "unsent")
+        if (held & SKIP) - CLEARED or state not in ENDED + ("unsent",) or self.open_children(n):
+            return False
+        try:
+            self.gh(["issue", "edit", str(n), "-R", self.repo, "--remove-label", REPLAN])
+        except Exception:
+            return False
+        gone = {REPLAN}
+        for name in sorted(held & CLEARED):
             try:
                 self.gh(["issue", "edit", str(n), "-R", self.repo, "--remove-label", name])
+                gone.add(name)
             except Exception:
                 pass
+        if state != "unsent":
+            self.store.forget("plan:%d" % n)
         item["labels"] = [label for label in item.get("labels", []) if label.get("name") not in gone]
+        return True
 
     def free(self, key):
         keep = set(self.pick(key))
