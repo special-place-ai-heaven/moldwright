@@ -51,6 +51,7 @@ class Status(unittest.TestCase):
         self.make()
         self.planner()
         holds.arm(self.d.store, "plan week", self.t + 3600)
+        self.d.cfg["held"] = True
         last = self.d.status({"digest": {}, "holds": [{"kind": "plan week"}]})
         self.assertEqual((last["planner_free"], last["planner_room"]), (1, 1))
         self.assertEqual(last["holds"][0]["kind"], "plan week")
