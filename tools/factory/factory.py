@@ -416,7 +416,7 @@ def cmd_wt(a):
         import janitor
         return janitor.main(a)
     if not a or a[0] not in ("new", "done", "list", "sweep"):
-        die("usage: wt new <repo> <issue> <chunk> [--base BRANCH] [--owner NAME] | wt done <repo> <issue> <chunk> | wt list | wt sweep [--apply]")
+        die("usage: wt new <repo> <issue> <chunk> [--base BRANCH] [--owner NAME] [--branch NAME] | wt done <repo> <issue> <chunk> | wt list | wt sweep [--apply]")
     if a[0] == "sweep":
         return wt_sweep("--apply" in a)
     if a[0] == "list":
@@ -489,7 +489,26 @@ def wt_new_clone_steps(a, full, issue, chunk):
         clones.transient("cannot read %s on GitHub" % full)
     base = a[a.index("--base") + 1] if "--base" in a else None
     owner = a[a.index("--owner") + 1] if "--owner" in a else os.environ.get("FACTORY_OWNER") or "unknown"
-    return clones.new(full, issue, chunk, base, owner, info["default_branch"])
+    branch = None
+    if "--branch" in a:
+        i = a.index("--branch") + 1
+        if i >= len(a) or a[i].startswith("--"):
+            die("usage: wt new <repo> <issue> <chunk> [--base BRANCH] [--owner NAME] [--branch NAME]")
+        branch = a[i]
+        why = branch_refusal(branch, info["default_branch"])
+        if why:
+            die("branch %s refused: %s. Leave out --branch to get chunk/%s-%s. Nothing made." % (branch, why, issue, chunk))
+    return clones.new(full, issue, chunk, base, owner, info["default_branch"], branch=branch)
+
+
+def branch_refusal(name, default):
+    if len(name) > 60 or not re.fullmatch(r"[a-z0-9][a-z0-9-]*(?:/[a-z0-9][a-z0-9-]*)*", name):
+        return "use lowercase letters, digits, - and / only, at most 60"
+    if name in ("main", "master", "dev", "head", default):
+        return "that is a base branch"
+    if name.startswith(("chunk/", "job/", "factory/job-", "plan/", "rescue/")):
+        return "that prefix belongs to the factory"
+    return None
 
 
 INSTALLS = (("pnpm-lock.yaml", ["pnpm", "install", "--frozen-lockfile", "--prefer-offline"]),
@@ -616,8 +635,9 @@ def wt_context():
     top = run([GIT, "rev-parse", "--show-toplevel"], cwd=cwd).stdout.strip()
     branch = run([GIT, "rev-parse", "--abbrev-ref", "HEAD"], cwd=top).stdout.strip()
     base = run([GIT, "config", "branch.%s.factorybase" % branch], cwd=top, check=False).stdout.strip()
-    m = re.fullmatch(r"chunk/(\d+)-([a-z0-9]+)", branch)
-    if not m or not base:
+    d = os.path.basename(top)
+    m = re.fullmatch(r"(\d+)-([a-z0-9]{1,12})", d)
+    if not m or not base or branch != wt_branch(os.path.basename(os.path.dirname(top)), d):
         die("this worktree was not made by `wt new` (branch %s)" % branch)
     url = run([GIT, "remote", "get-url", "origin"], cwd=top).stdout.strip()
     if "github.com/" not in url:
@@ -658,11 +678,10 @@ def token_shapes(top, base):
     return sorted(set(found))
 
 
-def clone_ready(top, full, branch, base):
+def clone_ready(top, full, branch, base, issue, chunk):
     import mirror
     if not os.path.isfile(os.path.join(top, ".git", "factory-ready")):
-        i, c = branch.split("/", 1)[1].split("-", 1)
-        die("this clone was not finished. Run `wt new %s %s %s` again first; it finishes the steps and changes nothing else." % (short(full), i, c))
+        die("this clone was not finished. Run `wt new %s %s %s` again first; it finishes the steps and changes nothing else." % (short(full), issue, chunk))
     url = run([GIT, "remote", "get-url", "origin"], cwd=top).stdout.strip()
     if url != mirror.url(full):
         die("origin of this clone is %s, not %s. Nothing pushed; tell @boss." % (url, mirror.url(full)))
@@ -765,7 +784,7 @@ def cmd_pr_open(a):
     top, full, branch, base, issue, chunk = wt_context()
     clone = is_clone(top)
     if clone:
-        clone_ready(top, full, branch, base)
+        clone_ready(top, full, branch, base, issue, chunk)
     if run([GIT, "status", "--porcelain"], cwd=top).stdout.strip():
         die("uncommitted changes. Commit everything for this chunk first (one push per chunk).")
     run([GIT, "fetch", "--quiet", "origin", base], cwd=top)

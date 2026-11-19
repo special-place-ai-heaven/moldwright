@@ -22,7 +22,7 @@ DRIVER = textwrap.dedent("""
     go = os.environ.get("T_GO")
     while go and not os.path.exists(go):
         pass
-    F.cmd_wt(["new", "rerun", os.environ["T_ISSUE"], os.environ["T_CHUNK"], "--clone"])
+    F.cmd_wt(["new", "rerun", os.environ["T_ISSUE"], os.environ["T_CHUNK"], *os.environ.get("T_ARGS", "").split(), "--clone"])
 """)
 PNPM = ("#!/bin/sh\n[ -n \"$T_KILL_PNPM\" ] && kill -9 $PPID\n"
         "if [ -n \"$T_SLOW_PNPM\" ]; then\n"
@@ -223,6 +223,49 @@ class CloneNew(CloneCase):
             self.assert_ready(p, chunk=str(i))
         self.assertEqual(len({os.path.realpath(os.path.join(p, ".git")) for p in dirs}), 8)
         self.assertFalse(os.path.exists(os.path.join(F.STATE, "builders.lock")))
+
+    def in_folder(self, fn):
+        cwd = os.getcwd()
+        try:
+            os.chdir(self.folder())
+            return self.call(lambda _: fn(), [])
+        finally:
+            os.chdir(cwd)
+
+    def test_wt_new_with_a_branch_name_makes_a_folder_pr_open_accepts(self):
+        code, out = self.new(T_ARGS="--branch factory/roster")
+        self.assertEqual(code, 0, out)
+        self.assertIn("branch factory/roster (from origin/dev, fresh)", out)
+        got = []
+        code, out = self.in_folder(lambda: got.append(F.wt_context()))
+        self.assertEqual(code, 0, out)
+        self.assertEqual(got[0][1:6], (FULL, "factory/roster", "dev", "7", "1"))
+
+    def test_a_reserved_or_malformed_branch_name_is_refused(self):
+        for name in ("dev", "main", "chunk/7-2", "job/7", "factory/job-7", "plan/7", "rescue/x", "Factory/Roster", "a..b", ""):
+            code, out = self.new(T_ARGS="--branch " + name)
+            self.assertEqual(code, 2, (name, out))
+            self.assertIn("REFUSED", out, name)
+            self.assertFalse(os.path.exists(self.folder()), name)
+
+    def test_pr_open_refuses_a_folder_whose_branch_is_not_its_recorded_one(self):
+        code, out = self.new(T_ARGS="--branch factory/roster")
+        self.assertEqual(code, 0, out)
+        T.git(self.folder(), "checkout", "--quiet", "-b", "factory/other")
+        T.git(self.folder(), "config", "branch.factory/other.factorybase", "dev")
+        code, out = self.in_folder(F.wt_context)
+        self.assertEqual(code, 2, out)
+        self.assertIn("not made by `wt new`", out)
+
+    def test_pr_open_in_an_unfinished_named_folder_says_to_run_wt_new_again(self):
+        code, out = self.new(T_ARGS="--branch factory/roster", T_KILL="installed")
+        self.assertEqual(code, 137, out)
+        code, out = self.in_folder(lambda: F.cmd_pr_open([]))
+        self.assertEqual(code, 2, out)
+        self.assertIn("Run `wt new rerun 7 1` again first", out)
+        code, out = self.new()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(T.git(self.folder(), "rev-parse", "--abbrev-ref", "HEAD"), "factory/roster")
 
 
 class KillAtEveryStep(CloneCase):
