@@ -727,7 +727,8 @@ class Dispatcher:
             return
         issues = json.loads(self.gh(["issue", "list", "-R", self.repo, "--label", self.label, "--state", "open",
                                      "--json", "number,title,labels,body", "--limit", "100"]))
-        issues = [i for i in issues if PAUSED not in {x.get("name") for x in i.get("labels") or [] if isinstance(x, dict)}]
+        paused = {i["number"] for i in issues if PAUSED in {x.get("name") for x in i.get("labels") or [] if isinstance(x, dict)}}
+        issues = [i for i in issues if i["number"] not in paused]
         for i in issues:
             old = self.store.get_job(str(i["number"]))
             if old and old["state"] != "waiting" and not (old["state"] in END and old.get("relabelled")):
@@ -748,7 +749,7 @@ class Dispatcher:
         shape = cutshape.check(issues)
         self.refused = {n: e for n, e in shape.items() if e}
         self.unreadable = len(self.refused)
-        labelled = {i["number"] for i in issues}
+        labelled = {i["number"] for i in issues} | paused
         tree = None
         if any(plancheck.needs(i) and not self.plan_settled(i) for i in issues):
             tree = plancheck.tree(self.gh, self.repo)
