@@ -38,6 +38,7 @@ import resolver
 import sifter
 import slots
 import tiers
+import toolcalls
 import weights
 import snapshot
 import states
@@ -69,6 +70,7 @@ WT_NEW_FAULT = re.compile(r"(?is)(?=.*\bwt new\b)(?!.*\bplan marker\b).*\b(?:can
 CHECKOUT_ROW, CHECKOUT_HOLD_S = 3, 60 * 60
 MERGE_TRIES = 5
 STALE_RUN_S, STALE_RUNS_A_BEAT = 2 * 3600, 15
+TOOL_READS_A_BEAT, TOOL_WINDOW_S, TOOL_TRIES, TOOL_ERROR_TRIES = 3, 86400, 5, 2
 DRAIN_SEND_S = 300
 DRAIN_MAX_S = 3 * 3600
 MAX_TAKES = 3
@@ -1144,6 +1146,38 @@ class Dispatcher:
             self.store.close_run(run, {"done": "done", "cancelled": "cancelled"}.get(r.get("status"), "error"),
                                  at=ended if isinstance(ended, str) and ended else None, **counts)
 
+    def measure_tools(self):
+        ids = {n: a for a, n in self.names.items()}
+        since = self.store.get_all("-").get("tools_since")
+        if since is None:
+            since = iso(self.now())
+            self.store.set("-", "tools_since", since)
+        tries = self.__dict__.setdefault("tool_tries", {})
+        rows = self.store.db.execute("SELECT f.run_id, f.job, f.stage, f.coworker, f.model, f.intent_at FROM fires f WHERE f.tools_read IS NULL "
+                                     "AND f.run_id IS NOT NULL AND f.status IN ('done','error','cancelled') "
+                                     "AND (f.stage LIKE 'build%' OR f.stage LIKE 'fix%') AND f.ended_at >= ? "
+                                     "AND f.id = (SELECT MIN(g.id) FROM fires g WHERE g.run_id = f.run_id) ORDER BY f.id LIMIT ?",
+                                     (iso(max(0.0, limits.ts(since) - TOOL_WINDOW_S)), TOOL_READS_A_BEAT)).fetchall()
+        for run, job, stage, who, model, intent_at in rows:
+            if who not in ids:
+                self.store.tools_seen(run, "refused")
+                continue
+            try:
+                r = self.account("get_run", {"agentId": ids[who], "runId": run, "includeToolCalls": True})
+            except Exception as e:
+                tries[run] = tries.get(run, 0) + 1
+                log(job, "tool calls of run %s: %s" % (run, e if isinstance(e, Error) else type(e).__name__))
+                limit = TOOL_ERROR_TRIES if isinstance(e, Error) and ("the tool reported an error" in str(e) or "HTTP 404" in str(e)) else TOOL_TRIES
+                if tries[run] >= limit:
+                    self.store.tools_seen(run, "refused")
+                return
+            if not isinstance(r, dict) or not isinstance(r.get("toolCalls"), list):
+                self.store.tools_seen(run, "none")
+                continue
+            c = toolcalls.count(r["toolCalls"])
+            self.store.tools_seen(run, "ok", c)
+            log(job, "tools of run %s: %d shell calls, %d only read, %d slept" % (run, c["shell"], c["read"], c["sleep"]))
+
     def close_replans(self):
         for j in self.jobs():
             run = j.get("replan_run")
@@ -1948,6 +1982,10 @@ class Dispatcher:
             self.close_stale()
         except Exception as e:
             log("-", "stale runs: %s" % (e if isinstance(e, Error) else type(e).__name__))
+        try:
+            self.measure_tools()
+        except Exception as e:
+            log("-", "tool counts: %s" % (e if isinstance(e, Error) else type(e).__name__))
         try:
             self.acceptance.once(self.beats, self.jobs())
         except Exception as e:

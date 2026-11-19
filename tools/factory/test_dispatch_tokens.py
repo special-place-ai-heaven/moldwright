@@ -11,7 +11,7 @@ class Counting:
         world.account = self.call
 
     def call(self, tool, args):
-        if tool == "get_run":
+        if tool == "get_run" and not args.get("includeToolCalls"):
             self.reads[args["runId"]] = self.reads.get(args["runId"], 0) + 1
         return self.account_orig(tool, args)
 
