@@ -6,6 +6,7 @@ import apptoken
 import backlog
 import briefs
 import causes
+import ceilings
 import ciwait
 import classify
 import clocks
@@ -629,7 +630,26 @@ class Dispatcher:
             why = strikes.held(self.store, self.now()).get(agent, {}).get("why")
             log(j["issue"], "coworker %s held until %s: %s" % (self.names.get(agent, agent[:8]), iso(until), why))
 
+    def pool_of(self, j):
+        return j.get("pool") or flow.station_type(j["state"], j.get("worker"))
+
+    def type_running(self, kind):
+        return len([j for j in self.jobs() if j["state"] in RUNNING and self.pool_of(j) == kind])
+
+    def under_ceiling(self, kind):
+        top = ceilings.cap(self.store, kind, self.now())
+        return top is None or self.type_running(kind) < top
+
+    def lower_ceiling(self, j):
+        kind = self.pool_of(j)
+        if kind not in pools.types(self.cfg):
+            return
+        new, until = ceilings.lower(self.store, kind, self.type_running(kind), self.now())
+        log(j["issue"], "rate limit on %s: at most %d at once until %s" % (kind, new, iso(until)))
+
     def free(self, worker, j=None, exclude=()):
+        if not self.under_ceiling(worker):
+            return None
         skip = self.unresolved() | self.held_ids() | set(exclude)
         t = pools.types(self.cfg).get(worker)
         if t is None:
@@ -658,7 +678,7 @@ class Dispatcher:
     def free_prover(self, j):
         judged = {j.get("builder"), j.get("reviewer"), (j.get("first_accept") or {}).get("by")}
         skip = self.unresolved() | self.held_ids() | judged
-        if pools.types(self.cfg).get("reviewer") is None:
+        if pools.types(self.cfg).get("reviewer") is None or not self.under_ceiling(self.prover_pool(j)):
             return None
         return self.warm_pick(j, pools.free_copies(self.cfg, self.prover_pool(j), self.running(), exclude=skip))
 
@@ -668,12 +688,16 @@ class Dispatcher:
         return "acceptor" if all(c["id"] in judged for c in t["coworkers"]) else "reviewer"
 
     def free_second(self, j, first):
+        if not self.under_ceiling("reviewer"):
+            return None
         skip = self.unresolved() | self.held_ids() | {first, j.get("builder")}
         return self.warm_pick(j, pools.free_copies(self.cfg, "reviewer", self.running(), exclude=skip))
 
     def free_copy_of(self, agent, j=None):
         mine = [c for t in pools.types(self.cfg).values() for c in t["coworkers"] if c["id"] == agent]
         if not mine or agent in self.unresolved():
+            return None
+        if j is not None and not self.under_ceiling(pools.build_pool(self.cfg, j.get("worker", "coder"))):
             return None
         if j is None:
             got = pools.pick_copy({"types": {"x": {"coworkers": mine}}}, "x", self.running())
@@ -1130,6 +1154,8 @@ class Dispatcher:
         kind, _ = clocks.outcome(row, None, self.now(), self.cfg.get("clocks"))
         if clocks.klass(kind, row) == "transient":
             self.store.close_run(j["run"], "error", error=why[:200], **self.kept_tokens(j["run"]))
+            if clocks.rate_limited(r.get("error")):
+                self.lower_ceiling(j)
             return self.transient(j, why)
         if clocks.klass(kind, row) == "plan_limit":
             return self.plan_limit(j, why, str(r.get("error") or "-"))

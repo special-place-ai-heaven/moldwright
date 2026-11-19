@@ -68,5 +68,13 @@ def klass(kind, run=None, blocked=None):
     return "work"
 
 
+def rate_limited(error):
+    raw = error or ""
+    if _NOT_IN_PLAN.search(raw) or _SPENT.search(raw):
+        return False
+    low = raw.lower()
+    return bool(_OVERLOADED.search(raw)) or any(p in low for p in ("provider_overloaded", "429", "rate limit"))
+
+
 def backoff(n):
     return RETRY_BACKOFF_S[n - 1] if 1 <= n <= len(RETRY_BACKOFF_S) else None

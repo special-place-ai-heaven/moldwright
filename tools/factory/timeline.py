@@ -37,6 +37,13 @@ def read_rows(path):
             except (ValueError, KeyError, TypeError):
                 continue
             holds.append({"kind": r["k"][len("hold:"):], "until": until})
+        ceilings = []
+        for r in db.execute("SELECT k, v FROM kv WHERE job='-' AND k LIKE 'ceiling:%' ORDER BY k"):
+            try:
+                got = json.loads(r["v"])
+                ceilings.append({"kind": r["k"][len("ceiling:"):], "cap": int(got["cap"]), "until": got["until"]})
+            except (ValueError, KeyError, TypeError):
+                continue
         fires = {r["job"]: r["coworker"] for r in db.execute("SELECT job, coworker FROM fires ORDER BY id")}
         accepts = {}
         for r in db.execute("SELECT job, k, v FROM kv WHERE job LIKE 'accept:%'"):
@@ -55,7 +62,7 @@ def read_rows(path):
             "SELECT job, COALESCE(SUM(tokens_in + tokens_out), 0) FROM fires GROUP BY job")}
     finally:
         db.close()
-    return {"jobs": jobs, "transitions": trs, "holds": holds, "fires": fires, "accepts": accepts,
+    return {"jobs": jobs, "transitions": trs, "holds": holds, "ceilings": ceilings, "fires": fires, "accepts": accepts,
             "accept": accept, "tokens": tokens}
 
 
@@ -78,6 +85,10 @@ def status_lines(rows, now):
         u = h.get("until")
         if isinstance(u, (int, float)) and not isinstance(u, bool) and u > now:
             held.append("sending held: %s until %s UTC" % (h["kind"], _hm(u)))
+    for c in rows.get("ceilings") or []:
+        u = c.get("until")
+        if isinstance(u, (int, float)) and not isinstance(u, bool) and u > now:
+            held.append("ceiling of %s lowered to %d at once until %s UTC (rate limit)" % (c["kind"], c["cap"], _hm(u)))
     for j in sorted(rows["jobs"], key=lambda j: _key(j["job"])):
         mine = trs.get(j["job"], [])
         last = mine[-1] if mine else None
