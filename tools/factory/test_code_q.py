@@ -93,6 +93,7 @@ class CodeQ(unittest.TestCase):
         with open(cfg, "w") as f:
             json.dump({"symforge": self.stand_in, "checkouts": self.checkouts, "keyFile": self.key, "servers": servers}, f)
         env = dict(os.environ, CODE_Q_CONFIG=cfg, CODE_Q_RETRY_MS="10", MARKER=self.marker)
+        env.pop("SYMFORGE_NO_DAEMON", None)
         return subprocess.run(["node", CODE_Q, *args], capture_output=True, text=True, env=env, timeout=60)
 
     def stub(self, *a, **k):
