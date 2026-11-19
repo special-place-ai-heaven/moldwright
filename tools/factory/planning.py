@@ -1097,6 +1097,8 @@ class Station:
         issues = json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "open", "--json",
                                      "number,title,labels,createdAt", "--limit", "100"]))
         records = self.records()
+        if self.cfg.get("held"):
+            log("-", "planning: sends held, no plan starts this beat")
         reset = False
         for i in issues:
             if REPLAN in names(i) and self.again(i, records.get(i["number"])):
@@ -1127,18 +1129,39 @@ class Station:
         n = item["number"]
         held = names(item)
         state = (row or {}).get("state", "unsent")
-        if (held & SKIP) - CLEARED or state not in ENDED + ("unsent",) or self.open_children(n):
-            return False
+        blocking = sorted((held & SKIP) - CLEARED)
+        if blocking:
+            return self.waits(n, "the issue also carries %s" % ", ".join(blocking))
+        if state not in ENDED + ("unsent",):
+            return self.waits(n, "its plan is still in progress")
+        children = self.open_children(n)
+        if children:
+            return self.waits(n, "its child issues %s are open" % ", ".join("#%d" % c["number"] for c in children))
         gone = sorted(held & CLEARED) + [REPLAN]
         for name in gone:
             try:
                 self.gh(["issue", "edit", str(n), "-R", self.repo, "--remove-label", name])
-            except Exception:
+            except Exception as e:
+                log("plan:%d" % n, "replan waits: label %s not removed (%s)" % (name, type(e).__name__))
                 return False
         if state != "unsent":
             self.store.forget("plan:%d" % n)
+        self.store.forget("replan:%d" % n)
         item["labels"] = [label for label in item.get("labels", []) if label.get("name") not in gone]
         return True
+
+    def waits(self, n, why):
+        job = "replan:%d" % n
+        if self.store.get_all(job).get("note") == why:
+            return False
+        try:
+            self.gh(["issue", "comment", str(n), "-R", self.repo, "--body",
+                     "`factory-replan` waits: %s. The label stays and the re-plan starts once that clears." % why])
+        except Exception as e:
+            log("plan:%d" % n, "replan note not posted (%s)" % type(e).__name__)
+            return False
+        self.store.set(job, "note", why)
+        return False
 
     def free(self, key):
         keep = set(self.pick(key))

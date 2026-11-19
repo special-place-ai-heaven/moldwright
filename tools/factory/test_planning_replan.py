@@ -102,5 +102,56 @@ class Replan(unittest.TestCase):
         self.assertEqual(r.store.get_all("plan:12")["run"], "run9")
 
 
+def notes_of(r):
+    return [c[c.index("--body") + 1] for c in r.calls if c[:2] == ["issue", "comment"]]
+
+
+class Waiting(unittest.TestCase):
+    def setUp(self):
+        self.saved = list(T.BACKLOG)
+
+    def tearDown(self):
+        T.BACKLOG[:] = self.saved
+
+    def test_a_waiting_label_says_why_once(self):
+        r = rig(["P0", planning.REPLAN, "factory-question"], "blocked")
+        r.station.once(1)
+        r.station.once(6)
+        said = notes_of(r)
+        self.assertEqual(len(said), 1)
+        self.assertIn("factory-question", said[0])
+
+    def test_each_reason_is_said(self):
+        cases = ((["P0", planning.REPLAN], "planned", {}, "in progress"),
+                 (["P0", planning.REPLAN], "cut", {12: [{"number": 101, "body": "**Part of**: #12"}]}, "#101"))
+        for labels, state, children, word in cases:
+            r = rig(labels, state, children=children)
+            r.station.once(1)
+            self.assertEqual(len(notes_of(r)), 1, state)
+            self.assertIn(word, notes_of(r)[0])
+
+    def test_a_new_reason_is_said_again(self):
+        r = rig(["P0", planning.REPLAN, "factory-question"], "blocked")
+        r.station.once(1)
+        T.BACKLOG[0]["labels"] = [{"name": n} for n in ("P0", planning.REPLAN, "duplicate")]
+        r.station.once(6)
+        self.assertEqual(len(notes_of(r)), 2)
+
+    def test_a_replan_that_runs_posts_no_note(self):
+        r = rig(["P0", planning.REPLAN], "blocked")
+        r.station.once(1)
+        self.assertEqual(notes_of(r), [])
+
+    def test_held_sends_are_logged(self):
+        import io, contextlib
+        r = rig(["P0"], "unsent")
+        r.cfg["held"] = True
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            r.station.once(1)
+        self.assertEqual(r.sends, [])
+        self.assertIn("held", out.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
