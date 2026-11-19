@@ -52,7 +52,8 @@ CREATE TABLE IF NOT EXISTS changes(
 """
 JOB_STATES = states.NAMES
 FIRE_COLUMNS = (("cache_read", "INTEGER"), ("cache_write", "INTEGER"), ("seconds", "INTEGER"),
-                ("steps", "INTEGER"), ("steps_at", "TEXT"), ("model", "TEXT"), ("thinking", "TEXT"))
+                ("steps", "INTEGER"), ("steps_at", "TEXT"), ("model", "TEXT"), ("thinking", "TEXT"),
+                ("shell_calls", "INTEGER"), ("read_calls", "INTEGER"), ("sleep_calls", "INTEGER"), ("tools_read", "TEXT"))
 FAILURE_COLUMNS = (("runs", "INTEGER"), ("cost", "REAL"))
 OPEN = ("intent", "running")
 CHANGE_COLUMNS = {"live_at", "after", "verdict", "revert", "told"}
@@ -198,6 +199,22 @@ class Store:
             self.db.execute("ROLLBACK")
             raise
         return fid
+
+    def tools_seen(self, run_id, how, counts=None, failure=None, at=None):
+        c = counts if counts is not None else {"shell": None, "read": None, "sleep": None}
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            n = self.db.execute("UPDATE fires SET tools_read=?, shell_calls=?, read_calls=?, sleep_calls=? WHERE run_id=? AND tools_read IS NULL",
+                                (how, c["shell"], c["read"], c["sleep"], run_id)).rowcount
+            if n > 0 and failure is not None:
+                self.db.execute("INSERT INTO failures(at, kind, job, station, coworker, model, reason) VALUES (?,?,?,?,?,?,?)",
+                                (at or now(), failure["kind"], str(failure["job"]), failure.get("station", ""), failure.get("coworker", ""),
+                                 failure.get("model"), gist(failure.get("reason", ""), 300)))
+            self.db.execute("COMMIT")
+        except BaseException:
+            self.db.execute("ROLLBACK")
+            raise
+        return n
 
     def add_ready(self, job, chunk, paths=(), builder="", deps=(), at=None):
         self.db.execute("INSERT INTO ready_chunks(job,chunk,builder,paths,deps,added_at) VALUES(?,?,?,?,?,?) "

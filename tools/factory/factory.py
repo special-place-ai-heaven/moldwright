@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import calendar, fnmatch, json, os, re, shlex, signal, subprocess, sys, time, shutil, urllib.request
+import calendar, fnmatch, json, os, re, shlex, signal, subprocess, sys, time, shutil, urllib.parse, urllib.request
 
 os.environ["GIT_TERMINAL_PROMPT"] = "0"
 GH, GIT = os.environ.get("FACTORY_GH") or "/data/tools/bin/gh", "/data/tools/bin/git"
@@ -11,10 +11,12 @@ LOAD_PER_CPU = 3.0
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ciwait
 import cutshape
+import codepacket
 MIN_FREE_MEM_GB, MEMINFO = 4, "/proc/meminfo"
 WT_IDLE_HOURS = 48
 CLONE_SAFE = 1
 QUEUE_LIMIT_S, SLICE_S = 30 * 60, 450
+PACKET_CHARS, CODE_SECONDS, CODE_MIN, DIFF_RESERVE = 40000, 15, 2000, 300
 PR_HEADS = ["## Done", "## Evidence", "## Not changed", "## Unsure", "## Open", "## Next owner and their done-test"]
 ADAPTED_HEAD = re.compile(r"(?m)^## Tests adapted[ \t]*\r?$")
 ADAPTABLE = re.compile(r"(^|/)(test_[^/]*\.py|[^/]*\.(test|spec)\.(js|ts|jsx|tsx))$")
@@ -183,50 +185,119 @@ def ci_table(cs):
     return "\n".join("  %-40s %-11s %s" % (c["name"][:40], c["status"], c["conclusion"] or "-") for c in sorted(cs, key=lambda c: c["name"])) or "  (no checks)"
 
 
+def gh_json(path, timeout):
+    try:
+        r = run([GH, "api", path], check=False, timeout=timeout)
+        return json.loads(r.stdout) if r.returncode == 0 else None
+    except (subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def code_ref(full, left):
+    def get(path):
+        t = min(codepacket.READ_S, left())
+        got = gh_json(path, t) if t > 0 else None
+        return got if isinstance(got, dict) else {}
+    sha = (get("repos/%s/branches/dev" % full).get("commit") or {}).get("sha")
+    if sha:
+        return "dev", sha
+    name = get("repos/%s" % full).get("default_branch")
+    sha = (get("repos/%s/branches/%s" % (full, name)).get("commit") or {}).get("sha") if name else None
+    return (name, sha) if sha else None
+
+
+def read_at(full, path, sha, timeout):
+    try:
+        r = subprocess.run([GH, "api", "-H", "Accept: application/vnd.github.raw+json",
+                            "repos/%s/contents/%s?ref=%s" % (full, urllib.parse.quote(path), sha)],
+                           capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+    return r.stdout if r.returncode == 0 else None
+
+
 def cmd_packet(a):
     if len(a) < 2:
         die("usage: packet <repo> <issue-or-PR number> [--full]")
     full, n, big = repo_full(a[0]), a[1].lstrip("#"), "--full" in a
+    used = [0]
+
+    def say(text):
+        print(text, flush=True)
+        used[0] += codepacket.units(text) + 1
     it = api("repos/%s/issues/%s" % (full, n))
     if not it:
         die("not found: %s#%s" % (full, n), 1)
     is_pr = "pull_request" in it
-    print("# %s %s#%s: %s" % ("PR" if is_pr else "ISSUE", full, n, it["title"]))
-    print("state: %s | labels: %s | author: %s | updated: %s" % (it["state"], ",".join(l["name"] for l in it["labels"]) or "-", it["user"]["login"], it["updated_at"]))
-    print(it["html_url"])
+    say("# %s %s#%s: %s" % ("PR" if is_pr else "ISSUE", full, n, it["title"]))
+    say("state: %s | labels: %s | author: %s | updated: %s" % (it["state"], ",".join(l["name"] for l in it["labels"]) or "-", it["user"]["login"], it["updated_at"]))
+    say(it["html_url"])
     refs = sorted(set(re.findall(r"#(\d+)", it.get("body") or "")) - {n})
     if is_pr:
         pr = api("repos/%s/pulls/%s" % (full, n))
-        print("base: %s <- head: %s @ %s | draft: %s | merged: %s | mergeable: %s | +%d -%d in %d files" % (
+        say("base: %s <- head: %s @ %s | draft: %s | merged: %s | mergeable: %s | +%d -%d in %d files" % (
             pr["base"]["ref"], pr["head"]["ref"], pr["head"]["sha"][:8], pr["draft"], pr["merged"], pr.get("mergeable_state"),
             pr["additions"], pr["deletions"], pr["changed_files"]))
-    print("linked: %s" % (", ".join("#" + r for r in refs) or "-"))
-    print("\n## Body\n" + trim(it.get("body"), 6000 if big else 3000))
-    if is_pr:
-        cs = checks(full, pr["head"]["sha"])
-        print("\n## CI: %s\n%s" % (ci_state(cs), ci_table(cs)))
-        files = api("repos/%s/pulls/%s/files?per_page=100" % (full, n)) or []
-        print("\n## Files")
-        for f in files:
-            print("  %-9s +%-4d -%-4d %s" % (f["status"], f["additions"], f["deletions"], f["filename"]))
-        d = run([GH, "pr", "diff", n, "-R", full], check=False).stdout
-        lines = d.splitlines()
-        lim = 1500 if big else 400
-        print("\n## Diff (%d lines%s)" % (len(lines), "" if len(lines) <= lim else ", first %d shown; --full shows 1500" % lim))
-        print("\n".join(l[:300] for l in lines[:lim]))
-    else:
-        tl = api("repos/%s/issues/%s/timeline?per_page=100" % (full, n)) or []
-        prs = sorted({str(e["source"]["issue"]["number"]) for e in tl if e.get("event") == "cross-referenced" and e.get("source", {}).get("issue", {}).get("pull_request")})
-        print("\n## PRs that mention it: %s" % (", ".join("#" + p for p in prs) or "-"))
+        m = re.fullmatch(r"chunk/(\d+)-([a-z0-9]+)", pr["head"]["ref"])
+        if m:
+            p = os.path.join(WT, short(full), "%s-%s" % m.groups())
+            say("worktree: %s" % p if os.path.isdir(p) else "worktree: none on this server for %s" % pr["head"]["ref"])
+    say("linked: %s" % (", ".join("#" + r for r in refs) or "-"))
+    say("\n## Body\n" + trim(it.get("body"), (6000 if big else 3000) if is_pr else (24000 if big else 12000)))
     cm = api("repos/%s/issues/%s/comments?per_page=100" % (full, n)) or []
     if is_pr:
         for r in api("repos/%s/pulls/%s/reviews?per_page=100" % (full, n)) or []:
             if r.get("body"):
                 cm.append({"user": r["user"], "created_at": r.get("submitted_at") or "", "body": "[review %s] %s" % (r["state"], r["body"])})
     cm.sort(key=lambda c: c["created_at"])
-    print("\n## Last comments (%d of %d)" % (min(5, len(cm)), len(cm)))
-    for c in cm[-5:]:
-        print("- %s %s: %s" % (c["created_at"], c["user"]["login"], trim(c["body"], 600).replace("\n", "\n  ")))
+    last = ["\n## Last comments (%d of %d)" % (min(5, len(cm)), len(cm))]
+    last += ["- %s %s: %s" % (c["created_at"], c["user"]["login"], trim(c["body"], 600).replace("\n", "\n  ")) for c in cm[-5:]]
+    if is_pr:
+        cs = checks(full, pr["head"]["sha"])
+        say("\n## CI: %s\n%s" % (ci_state(cs), ci_table(cs)))
+        files = api("repos/%s/pulls/%s/files?per_page=100" % (full, n)) or []
+        say("\n## Files")
+        for f in files:
+            say("  %-9s +%-4d -%-4d %s" % (f["status"], f["additions"], f["deletions"], f["filename"]))
+        d = run([GH, "pr", "diff", n, "-R", full], check=False).stdout
+        lines = d.splitlines()
+        lim = 1500 if big else 400
+        say("\n## Diff (%d lines%s)" % (len(lines), "" if len(lines) <= lim else ", first %d shown; --full shows 1500" % lim))
+        tail = codepacket.units("\n".join(last)) + DIFF_RESERVE
+        kept, size = [], 0
+        for line in (l[:300] for l in lines[:lim]):
+            if used[0] + size + codepacket.units(line) + 1 + tail > PACKET_CHARS:
+                break
+            kept.append(line)
+            size += codepacket.units(line) + 1
+        say("\n".join(kept))
+        if len(kept) < min(len(lines), lim):
+            say("[... diff cut at the packet's %d characters: %d more lines; gh pr diff %s -R %s prints them]" % (
+                PACKET_CHARS, min(len(lines), lim) - len(kept), n, full))
+    else:
+        tl = api("repos/%s/issues/%s/timeline?per_page=100" % (full, n)) or []
+        prs = sorted({str(e["source"]["issue"]["number"]) for e in tl if e.get("event") == "cross-referenced" and e.get("source", {}).get("issue", {}).get("pull_request")})
+        say("\n## PRs that mention it: %s" % (", ".join("#" + p for p in prs) or "-"))
+    for line in last:
+        say(line)
+    if not is_pr:
+        try:
+            start = time.monotonic()
+
+            def left():
+                return CODE_SECONDS - (time.monotonic() - start)
+            room = PACKET_CHARS - used[0] - DIFF_RESERVE
+            if room < CODE_MIN:
+                say("\n## Code\n(not shown: the issue text and comments use the packet's %d characters; read the files in your worktree)" % PACKET_CHARS)
+            else:
+                ref = code_ref(full, left)
+                if ref is None:
+                    say("\n## Code\n(dev could not be read on GitHub; read the files in your worktree)")
+                else:
+                    say("\n" + codepacket.section(it.get("body") or "", int(n), lambda p, t: read_at(full, p, ref[1], t),
+                                                 "%s @ %s" % (ref[0], ref[1][:8]), room, max(0.0, left())))
+        except Exception as e:
+            say("\n## Code\n(not shown: %s; read the files in your worktree)" % type(e).__name__)
 
 
 def du_gb(p):
