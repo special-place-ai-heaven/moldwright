@@ -2001,6 +2001,10 @@ class Dispatcher:
             out["plans"] = {str(n): r.get("state") for n, r in sorted(records.items()) if r.get("state") not in planning.ENDED}
             out["planner_free"] = len(pools.free_copies(dict(self.cfg, held=False), "planner", self.station.running()))
             out["planner_room"] = self.station.parallel - len(live)
+            rows = [("plan:%d" % n, r) for n, r in sorted(live.items())]
+            rows += [("recheck:%d" % n, r) for n, r in sorted(self.station.live_rechecks().items())]
+            out["planner_holders"] = [{"job": job, "by": self.names.get(r.get("agent"), str(r.get("agent"))[:8]), "state": r.get("state"),
+                                       "since": r.get("started")} for job, r in rows]
         except Exception as e:  # noqa: BLE001
             out["planner_error"] = type(e).__name__
         return out
@@ -2022,6 +2026,9 @@ class Dispatcher:
             if self.now() - self.started >= REPORT_QUIET_S and text not in self.report_logged:
                 self.report_logged.add(text)
                 log("-", "factory_report: %s" % text)
+            held = holds.active(self.store, self.now())
+            digest.post(self.gh, self.store, self.home,
+                        self.status({"digest": {"report_error": text[:200]}, "holds": [held] if held else []}), self.now())
 
 
 def ask_refresh(gh, repo, logged):

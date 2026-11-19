@@ -56,6 +56,16 @@ class Status(unittest.TestCase):
         self.assertEqual((last["planner_free"], last["planner_room"]), (1, 1))
         self.assertEqual(last["holds"][0]["kind"], "plan week")
 
+    def test_the_digest_names_who_holds_each_planner_copy(self):
+        self.make()
+        self.planner()
+        for k, v in (("state", "running"), ("agent", "p1"), ("copy", "2"), ("started", "2026-11-18T17:00:00Z")):
+            self.d.store.set("recheck:40", k, v)
+        out = self.d.status({"digest": {}, "holds": []})
+        self.assertEqual(out["planner_free"], 0)
+        self.assertEqual([(h["job"], h["state"], h["since"]) for h in out["planner_holders"]],
+                         [("plan:12", "reviewing", "2026-11-19T00:00:00Z"), ("recheck:40", "running", "2026-11-18T17:00:00Z")])
+
     def test_a_broken_plan_record_still_posts_the_digest(self):
         self.make()
         self.capture()
@@ -68,6 +78,21 @@ class Status(unittest.TestCase):
         got = self.capture()
         self.once()
         self.assertTrue([d for d in got if d is not None])
+
+    def test_a_failing_report_still_posts_its_error(self):
+        self.make()
+        got = self.capture()
+        real = D.snapshot.build_snapshot
+
+        def broken(*a, **k):
+            raise KeyError("x")
+        D.snapshot.build_snapshot = broken
+        self.addCleanup(setattr, D.snapshot, "build_snapshot", real)
+        holds.arm(self.d.store, "update", self.t + 600)
+        self.once()
+        posted = [d for d in got if d is not None]
+        self.assertEqual(posted[-1]["report_error"], "KeyError")
+        self.assertEqual(posted[-1]["holds"][0]["kind"], "update")
 
     def test_the_app_snapshot_digest_is_left_alone(self):
         self.make()
