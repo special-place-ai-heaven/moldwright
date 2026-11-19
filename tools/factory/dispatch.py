@@ -1994,10 +1994,16 @@ class Dispatcher:
         d = snap.get("digest")
         if d is None:
             return None
-        plans = {str(n): r.get("state") for n, r in sorted(self.station.records().items())
-                 if r.get("state") not in planning.ENDED}
-        free = len(pools.free_copies(self.cfg, "planner", self.station.running()))
-        return dict(d, holds=snap.get("holds", []), plans=plans, planner_free=free)
+        out = dict(d, holds=snap.get("holds", []))
+        try:
+            records = self.station.records()
+            live = self.station.live()
+            out["plans"] = {str(n): r.get("state") for n, r in sorted(records.items()) if r.get("state") not in planning.ENDED}
+            out["planner_free"] = len(pools.free_copies(dict(self.cfg, held=False), "planner", self.station.running()))
+            out["planner_room"] = self.station.parallel - len(live)
+        except Exception as e:  # noqa: BLE001
+            out["planner_error"] = type(e).__name__
+        return out
 
     def report_line(self):
         self.answer = None
@@ -2008,8 +2014,8 @@ class Dispatcher:
                                            plan=renewal.plan(self.connections, now))
             digest.alarm(self.store, snap.get("digest"), now)
             snap.update(self.extra())
-            self.answer = self.account("factory_report", {"snapshot": snap}, timeout=10)
             digest.post(self.gh, self.store, self.home, self.status(snap), now)
+            self.answer = self.account("factory_report", {"snapshot": snap}, timeout=10)
             self.report_logged.clear()
         except Exception as e:  # noqa: BLE001 - the report only, never the beat
             text = str(e) if isinstance(e, Error) else type(e).__name__
