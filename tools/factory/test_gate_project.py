@@ -35,7 +35,11 @@ def _run_gate(repo, files, comments, roster, builder="code"):
     return next(l for l in out.getvalue().splitlines() if l.startswith("REVIEWS ")), calls
 
 
-def _run_risk(repo, files, roster):
+def _no_open_work(path, paginate=False, jq=".[]"):
+    return []
+
+
+def _run_risk(repo, files, roster, gh=_no_open_work):
     pr = {"title": "t", "head": {"sha": H, "ref": "chunk/78-O2"}, "base": {"ref": "job/78"}, "body": ""}
 
     def fake(path, *args, paginate=False):
@@ -44,7 +48,7 @@ def _run_risk(repo, files, roster):
         return pr
 
     out = io.StringIO()
-    with mock.patch.object(F, "api", fake), mock.patch.object(F, "base_roster", roster), \
+    with mock.patch.object(F, "api", fake), mock.patch.object(F, "base_roster", roster), mock.patch.object(G, "gh_json", gh), \
             mock.patch.object(F, "home", lambda: HOME), contextlib.redirect_stdout(out):
         F.cmd_risk([repo, "5"])
     return out.getvalue()
@@ -101,6 +105,38 @@ class TestGateProject(unittest.TestCase):
         line, _ = _run_gate(OTHER, ["src/a.ts"], ["LINUS", "BRUCE"], _unreadable_roster)
         self.assertTrue(line.startswith("REVIEWS FAIL"), line)
         self.assertIn("roster unreadable", line)
+
+    def test_risk_labels_each_reviewer_with_the_area_that_requires_it(self):
+        out = _run_risk(OTHER, ["frontend/src/login/Login.tsx", "tools/factory/factory.py"], _real_roster)
+        self.assertIn("EXTRA REVIEWER DIETER: roster owner (area ui) (frontend/src/login/Login.tsx)\n", out)
+        self.assertIn("EXTRA REVIEWER BRUCE: roster owner (area auth-secrets); sensitive area auth-secrets; sensitive area factory-checkout "
+                      "(frontend/src/login/Login.tsx, tools/factory/factory.py)\n", out)
+
+    def test_risk_prints_a_claim_line_for_an_area_another_open_pr_holds(self):
+        def open_pr(path, paginate=False, jq=".[]"):
+            p = path.split("?")[0]
+            if p.endswith("/pulls"):
+                return [{"number": 77, "head": {"ref": "engine/y"}}]
+            if p.endswith("/pulls/77/files"):
+                return [{"filename": "apps/engine/docker-entrypoint.sh"}]
+            return []
+        out = _run_risk(OTHER, ["apps/engine/Dockerfile"], _real_roster, open_pr)
+        self.assertIn("CLAIM engine-start: also #77 (needs MARGARET ACCEPT naming #77)", out)
+        out = _run_risk(OTHER, ["apps/engine/Dockerfile"], _real_roster)
+        self.assertIn("CLAIMS: none, no shared area with 0 open PRs or jobs", out)
+
+    def test_risk_that_cannot_list_open_work_says_so_and_exits_0(self):
+        import subprocess
+
+        def refuse(path, paginate=False, jq=".[]"):
+            raise G.NoAnswer("x")
+
+        def timeout(path, paginate=False, jq=".[]"):
+            raise subprocess.TimeoutExpired("gh", 300)
+        for gh in (refuse, timeout):
+            out = _run_risk(OTHER, ["apps/engine/Dockerfile"], _real_roster, gh)
+            self.assertIn("CLAIMS: cannot list open work (", out)
+            self.assertIn("EXTRA REVIEWER MARGARET", out)
 
 
 if __name__ == "__main__":

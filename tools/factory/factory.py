@@ -920,11 +920,22 @@ def cmd_risk(a):
         import roster as R
         need = {k: v for k, v in need.items() if k == "STOP"}
         plain = []
+        sens = {a["name"] for a in ro["areas"] + [ro["default"]] if a["sensitive"]}
+        own = {}
         for f in files:
             fn = f["filename"]
-            for area, _ in R.areas(ro, [fn]).items():
-                for who in R.required(ro, [fn]):
-                    need.setdefault(who, ["roster owner (area %s)" % area, []])[1].append(fn)
+            for area in R.areas(ro, [fn]):
+                pairs = [(R.owner(ro, area), "roster owner (area %s)" % area)]
+                if area in sens:
+                    pairs.append((R.GATE_SENSITIVE, "sensitive area %s" % area))
+                for who, label in pairs:
+                    labels, fns = own.setdefault(who, ([], []))
+                    if label not in labels:
+                        labels.append(label)
+                    if fn not in fns:
+                        fns.append(fn)
+        for who, (labels, fns) in own.items():
+            need[who] = ["; ".join(labels), fns]
     tops = {f["filename"].split("/")[0] for f in files}
     lines = sum(f["additions"] + f["deletions"] for f in files)
     if len(files) > 25 or lines > 1200:
@@ -940,8 +951,27 @@ def cmd_risk(a):
         print("EXTRA REVIEWER %s: %s%s" % (w, need[w][0], (" (" + ", ".join(need[w][1][:4]) + (" ..." if len(need[w][1]) > 4 else "") + ")") if need[w][1] else ""))
     if not extra and "STOP" not in need:
         print("EXTRA REVIEWERS: none. LINUS alone.")
+    if ro:
+        risk_claims(full, n, pr if isinstance(pr, dict) else {}, [f["filename"] for f in files], ro)
     if jev_note:
         print(jev_note)
+
+
+def risk_claims(full, n, pr, names, ro):
+    import gate as G
+    import roster as R
+    m = re.search(r"Job: [\w./-]+#(\d+), chunk", pr.get("body") or "") or re.fullmatch(r"chunk/(\d+)-\w+", (pr.get("head") or {}).get("ref") or "")
+    try:
+        others = G.open_claims(full, n, m.group(1) if m else None)
+        confl = [(a, r, R.owner(ro, a)) for a, refs in R.overlaps(ro, names, others).items() for r in refs]
+        _, lines = R.claims_check(confl, {})
+    except (G.NoAnswer, subprocess.SubprocessError, OSError, ValueError, KeyError, AttributeError, TypeError) as e:
+        print("CLAIMS: cannot list open work (%s); the gate fails closed on it" % str(e)[:200])
+        return
+    for line in lines:
+        print(line)
+    if not lines:
+        print("CLAIMS: none, no shared area with %d open PRs or jobs" % len(others))
 
 
 def jev_risk(title, files, need):
