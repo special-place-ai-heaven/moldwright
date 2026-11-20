@@ -58,7 +58,7 @@ export function opencodeServesModel(provider: Provider, providerModels: Provider
     return providerModels.some(model => model.id === id)
 }
 
-export const discoveredModelSchema = z.object({ id: z.string(), contextWindow: z.number().nullable() })
+export const discoveredModelSchema = z.object({ id: z.string(), contextWindow: z.number().nullable(), label: z.string().optional(), price: providerModelSchema.shape.price.optional() })
 export type DiscoveredModel = z.infer<typeof discoveredModelSchema>
 
 export const connectionSummarySchema = connectionConfigSchema.extend({
