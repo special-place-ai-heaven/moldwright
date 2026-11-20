@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { fakeSupabase, type SupabaseCall } from '@/test/supabase-fake'
@@ -143,5 +145,35 @@ describe('selectCount', () => {
         await selectCount(db.client, 'services', {}, 'slug')
 
         expect(db.chains[0][1].args).toEqual(['slug', { count: 'exact', head: true }])
+    })
+})
+
+function listTsFiles(dir: string): string[] {
+    const out: string[] = []
+    for (const entry of readdirSync(dir)) {
+        if (entry === 'node_modules' || entry === '.next') continue
+        const full = join(dir, entry)
+        const st = statSync(full)
+        if (st.isDirectory()) out.push(...listTsFiles(full))
+        else if (/\.(ts|tsx)$/.test(entry) && !/\.(test|spec)\.(ts|tsx)$/.test(entry)) out.push(full)
+    }
+    return out
+}
+
+describe('multi-column orderBy and typed Supabase read discipline', () => {
+    it('supports an array of orderBy columns in selectMany and leaves zero raw .from().select() reads in apps/ui', async () => {
+        const db = fakeSupabase(() => ({ data: [] }))
+        await selectMany(db.client, 'services', ['slug', 'name'] as const, { enabled: true }, [{ column: 'category' }, { column: 'name' }] as never, 10, 0)
+        expect(db.chains[0].filter(c => c.method === 'order').map(c => c.args)).toEqual([
+            ['category', { ascending: true }],
+            ['name', { ascending: true }],
+        ])
+
+        const uiRoot = resolve(process.cwd(), 'app')
+        const rawReads = listTsFiles(uiRoot).filter(file => {
+            const src = readFileSync(file, 'utf8')
+            return /\.from\(\s*['"][^'"]+['"]\s*\)\s*\.select\(/.test(src)
+        })
+        expect(rawReads).toEqual([])
     })
 })

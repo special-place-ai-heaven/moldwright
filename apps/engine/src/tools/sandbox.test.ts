@@ -119,11 +119,11 @@ describe('assertCommandAllowed', () => {
         expect(() => assertCommandAllowed(command)).not.toThrow()
     })
 
-    it.each(['rm -fr /', 'rm -r -f /', 'rm -rf /*', 'dd of=/dev/sda if=/dev/zero'])('does not catch the rewritten form %j', command => {
-        expect(() => assertCommandAllowed(command)).not.toThrow()
+    it.each(['rm -fr /', 'rm -r -f /', 'rm -rf /*', 'rm -rf /data', 'rm -fr /data/*', 'dd of=/dev/sda if=/dev/zero'])('blocks rewritten or /data destructive form %j', command => {
+        expect(() => assertCommandAllowed(command)).toThrow(/blocked by policy/)
     })
 
-    it('blocks any command merely mentioning a power verb', () => {
-        expect(() => assertCommandAllowed('cat shutdown.txt')).toThrow(/blocked by policy/)
+    it.each(['cat shutdown.txt', 'git commit -m "graceful shutdown"', 'rg halt src/'])('allows power verbs in arguments and filenames (%j)', command => {
+        expect(() => assertCommandAllowed(command)).not.toThrow()
     })
 })
