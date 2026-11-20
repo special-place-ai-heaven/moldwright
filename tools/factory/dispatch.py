@@ -2059,7 +2059,10 @@ class Dispatcher:
         except Exception as e:
             clean = False
             log("-", "replans: %s" % (e if isinstance(e, Error) else type(e).__name__))
+        stepped, raised = 0, []
         for j in self.jobs():
+            before = (j.get("errors", 0), j.get("failing_since"), j.get("last_error"))
+            stepped += 1
             try:
                 if j["state"] not in END:
                     self.step(j)
@@ -2079,9 +2082,22 @@ class Dispatcher:
                 log(j["issue"], "%s: %s" % (j["state"], j["last_error"]))
                 j["errors"] = j.get("errors", 0) + 1
                 j.setdefault("failing_since", self.now())
+                raised.append((j, before))
                 self.save(j, "pass failed")
-                if j["errors"] >= 20 and self.now() - j["failing_since"] >= FAIL_AFTER_S and j["state"] not in END:
-                    self.end(j, "failed", "20 passes in a row failed in state %s: %s" % (j["state"], j["last_error"]))
+        if stepped >= 2 and len(raised) == stepped:
+            log("-", "pass outage: %d jobs failed, counters kept" % len(raised))
+            for j, (errors, failing_since, last_error) in raised:
+                j["errors"] = errors
+                for key, value in (("failing_since", failing_since), ("last_error", last_error)):
+                    if value is None:
+                        j.pop(key, None)
+                    else:
+                        j[key] = value
+                self.save(j, "pass outage")
+            raised = []
+        for j, _ in raised:
+            if j["errors"] >= 20 and self.now() - j["failing_since"] >= FAIL_AFTER_S and j["state"] not in END:
+                self.end(j, "failed", "20 passes in a row failed in state %s: %s" % (j["state"], j["last_error"]))
         try:
             p = machine.path()
             self.machine = machine.read(self.now(), p) if p else None
