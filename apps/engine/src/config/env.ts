@@ -13,6 +13,7 @@ const schema = z.object({
     RERUN_CODEX_PATH: z.string().optional(),
     RERUN_DESKTOP: z.string().optional(),
     RERUN_FS_EXTRA_ROOTS: z.string().optional(),
+    RERUN_ALLOW_UNAUTHENTICATED: z.string().optional(),
 })
 
 export type Env = z.infer<typeof schema>

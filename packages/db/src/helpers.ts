@@ -67,10 +67,21 @@ function orCondition(column: string, value: unknown): string {
     return `${column}.eq.${quoteOrValue(value)}`
 }
 
+function assertValidFilterValue(column: string, value: unknown): void {
+    if (value === undefined) throw new Error(`Filter "${column}" cannot be undefined`)
+    if (typeof value === 'number' && Number.isNaN(value)) throw new Error(`Filter "${column}" cannot be NaN`)
+    if (Array.isArray(value)) {
+        for (const item of value) assertValidFilterValue(column, item)
+        return
+    }
+    if (value !== null && typeof value === 'object') {
+        for (const v of Object.values(value)) assertValidFilterValue(column, v)
+    }
+}
+
 function applyFilters<T extends TableName>(query: any, filters: Filters<T>) {
     for (const [key, value] of Object.entries(filters)) {
-        if (value === undefined) continue
-
+        if (key !== 'or') assertValidFilterValue(key, value)
         if (key === 'or' && value !== null && typeof value === 'object' && !Array.isArray(value)) {
             const conditions = Object.entries(value as Record<string, unknown>)
                 .filter(([, v]) => v !== undefined)

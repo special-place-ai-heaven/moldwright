@@ -5,7 +5,11 @@ export const FOREMAN_HUB_TOKEN_TTL_MS = 12 * 60 * 60 * 1000
 export type ForemanHubClaims = { ws: number; uid?: string; exp: number }
 
 function secret(): string | undefined {
-    return process.env.FOREMAN_HUB_TOKEN_SECRET || undefined
+    if (process.env.FOREMAN_HUB_TOKEN_SECRET) return process.env.FOREMAN_HUB_TOKEN_SECRET
+    if (process.env.SUPABASE_SECRET_KEY) {
+        return createHmac('sha256', process.env.SUPABASE_SECRET_KEY).update('foreman-hub-token-v1').digest('base64url')
+    }
+    return undefined
 }
 
 function sign(key: string, payload: string): string {
@@ -39,5 +43,5 @@ export function verifyForemanHubToken(raw: string | null | undefined, workspaceI
 }
 
 export function foremanHubTokenRequired(): boolean {
-    return secret() !== undefined && process.env.FOREMAN_HUB_TOKEN_REQUIRED !== '0'
+    return process.env.FOREMAN_HUB_TOKEN_REQUIRED !== '0'
 }

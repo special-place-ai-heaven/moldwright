@@ -15,8 +15,8 @@ describe('filters', () => {
             ['eq', 'workspace_id', 3],
             ['in', 'id', ['a', 'b']],
         ])
-        expect(() => selectMany(db.client, 'agents', ['id'] as const, { workspace_id: undefined })).toThrow(/undefined/)
-        expect(() => selectMany(db.client, 'agents', ['id'] as const, { workspace_id: Number.NaN })).toThrow(/NaN/)
+        await expect(selectMany(db.client, 'agents', ['id'] as const, { workspace_id: undefined })).rejects.toThrow(/undefined/)
+        await expect(selectMany(db.client, 'agents', ['id'] as const, { workspace_id: Number.NaN })).rejects.toThrow(/NaN/)
     })
 
     it('maps each operator object onto its PostgREST method', async () => {

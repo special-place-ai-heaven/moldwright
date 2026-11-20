@@ -6,6 +6,7 @@ import { attachCustomEngine, findWorkspaceEngine } from '@/app/api/_services/wor
 import { buildBaseUrl } from '@/lib/engine/base-url'
 import { getEngineHealth, listConnections } from '@/lib/engine/client'
 import type { EngineHealth } from '@/lib/engine/types'
+import { assertPublicUrl } from '@/lib/net/public-fetch'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectMaybeSingle } from '@/supabase/supabase-helpers'
 import { AppError, type ErrorCode, type ErrorParams } from '@/lib/i18n/action-error'
@@ -39,6 +40,13 @@ export async function createPairingToken(workspaceId: number, userId: string): P
 }
 
 async function checkReachable(baseUrl: string, apiKey: string): Promise<EngineHealth> {
+    if (process.env.RERUN_ALLOW_PRIVATE_ENGINE_URLS !== '1') {
+        try {
+            await assertPublicUrl(baseUrl)
+        } catch {
+            throw new ServerPairingError('serverUnreachable', 422, { url: baseUrl })
+        }
+    }
     const conn = { baseUrl, apiKey }
     let health: EngineHealth
     try {

@@ -54,7 +54,7 @@ async function main() {
     const [command, ...rest] = process.argv.slice(2)
     switch (command) {
         case 'run':
-            return runCommand()
+            return runCommand(rest)
         case 'migrate':
             return migrateCommand()
         case 'restore-finalize':

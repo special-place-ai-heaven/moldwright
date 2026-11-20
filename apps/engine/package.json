@@ -11,7 +11,7 @@
         "patches"
     ],
     "scripts": {
-        "dev": "tsx watch --env-file-if-exists=.env src/cli/bin.ts run",
+        "dev": "tsx watch --env-file-if-exists=.env src/cli/bin.ts run --allow-unauthenticated",
         "build": "tsc",
         "lint": "eslint .",
         "start": "node dist/cli/bin.js run",

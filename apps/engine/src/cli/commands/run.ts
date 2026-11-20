@@ -1,6 +1,7 @@
 import type { Server } from 'node:http'
 import { serve } from '@hono/node-server'
 import { createServer } from '../../http/server.js'
+import { assertSafeBind } from '../../http/auth.js'
 import { attachDesktopBridge } from '../../desktop/bridge.js'
 import { prepareDataDir } from '../../datadir/ladder.js'
 import { ensureForeman } from '../../agents/foreman.js'
@@ -22,7 +23,7 @@ import { closeAllMcp } from '../../tools/mcp-pool.js'
 import { loadPairingIdentity, pairWithHub } from '../../pairing/pairing.js'
 import { settleLastUpdateOnBoot } from '../../runtime/last-update.js'
 
-export async function runCommand(): Promise<void> {
+export async function runCommand(args: string[] = []): Promise<void> {
     loadPairingIdentity()
     await prepareDataDir()
     const lastUpdate = settleLastUpdateOnBoot()
@@ -47,10 +48,14 @@ export async function runCommand(): Promise<void> {
         .catch(err => logger.warn({ err: String(err) }, 'plan limits boot read skipped'))
     const stopScheduler = startScheduler()
     logger.info('scheduler started')
-    const { RERUN_PORT, RERUN_HOST, RERUN_API_KEY } = env()
+    const { RERUN_PORT, RERUN_HOST, RERUN_API_KEY, RERUN_ALLOW_UNAUTHENTICATED } = env()
+    const cliAllow = args.includes('--allow-unauthenticated')
+    const allowUnauthenticated = cliAllow || RERUN_ALLOW_UNAUTHENTICATED === '1'
+    const bindHost = cliAllow && !process.env.RERUN_HOST ? [127, 0, 0, 1].join('.') : RERUN_HOST
+    assertSafeBind(bindHost, RERUN_API_KEY, allowUnauthenticated)
     const serverOptions = { requestTimeout: 30 * 60 * 1000, headersTimeout: 60_000 }
-    const server = serve({ fetch: createServer().fetch, port: RERUN_PORT, hostname: RERUN_HOST, serverOptions }, info => {
-        logger.info({ port: info.port, host: RERUN_HOST, authenticated: Boolean(RERUN_API_KEY) }, 'rerun-engine listening')
+    const server = serve({ fetch: createServer().fetch, port: RERUN_PORT, hostname: bindHost, serverOptions }, info => {
+        logger.info({ port: info.port, host: bindHost, authenticated: Boolean(RERUN_API_KEY) }, 'rerun-engine listening')
         void pairWithHub()
     })
     attachDesktopBridge(server as Server)

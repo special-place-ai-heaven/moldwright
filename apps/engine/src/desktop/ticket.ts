@@ -15,7 +15,7 @@ export function verifyDesktopTicket(raw: string | null | undefined, now: number 
     const [payload, signature] = (raw ?? '').split('.')
     if (!payload) return null
     const key = env().RERUN_API_KEY
-    if (key && !signedWith(key, payload, signature)) return null
+    if (!key || !signedWith(key, payload, signature)) return null
     try {
         const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { exp?: unknown; agent?: unknown; mode?: unknown }
         if (typeof claims.exp !== 'number' || claims.exp < now) return null

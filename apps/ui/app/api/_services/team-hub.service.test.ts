@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolveAgentTarget } from '@/app/api/_services/chat.service'
 import { dispatchAccountTool } from '@/app/api/_services/mcp-account.service'
 import { getAgent } from '@/lib/engine/client'
-import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectAll, selectMaybeSingle } from '@/supabase/supabase-helpers'
 import { dispatchTeamHubTool, isTeamHubTool } from './team-hub.service'
 
