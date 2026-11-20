@@ -1,4 +1,4 @@
-import contextlib, io, json, os, shutil, subprocess, sys, tempfile, time, unittest
+import contextlib, io, json, os, shutil, subprocess, sys, tempfile, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dispatch as D
