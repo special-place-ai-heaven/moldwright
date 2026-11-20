@@ -2,6 +2,8 @@ import os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import holds
 import pools
+import strikes
+import test_dispatch_holds as H
 import test_dispatch_renewal as R
 
 
@@ -88,13 +90,24 @@ class OffTheSubscription(unittest.TestCase):
         self.assertEqual(self.hold()["kind"], "plan week")
         self.assertEqual(len(self.w.sends), 2)
 
-    def test_a_spent_quota_off_the_subscription_holds_no_subscription_coworker(self):
-        self.make(10)
+    def test_the_pacing_below_the_hold_mark_leaves_builders_off_the_subscription_their_slots(self):
+        self.make_many(94, [R.issue(5), R.issue(6)])
         self.builders("openrouter")
         self.beat()
-        job = self.d.store.get_job("5")
-        self.d.plan_limit_or_fail(job, "openrouter: quota exceeded", "quota exceeded")
-        self.assertIsNone(holds.active(self.d.store, self.w.clock))
+        self.w.clock += 30
+        self.beat()
+        self.assertLess(self.d.pace, 1)
+        self.assertEqual(len(self.w.sends), 2)
+
+    def test_a_fix_on_a_builder_on_the_subscription_waits_out_a_plan_hold(self):
+        self.make(10)
+        agent = self.d.cfg["builders"][0]["id"]
+        self.assertIsNotNone(self.d.free_copy_of(agent))
+        holds.arm(self.d.store, "plan week", self.w.clock + 3600)
+        self.assertIsNone(self.d.free_copy_of(agent))
+        self.builders("openrouter")
+        self.assertIsNotNone(self.d.free_copy_of(agent))
+
 
     def with_a_tier_model(self):
         inner = self.d.tier_job
@@ -134,6 +147,32 @@ class OffTheSubscription(unittest.TestCase):
         self.w.clock += 30
         self.beat()
         self.assertEqual(len(self.w.sends), 0)
+
+
+class SpentKey(H.Holds):
+    def test_a_spent_key_off_the_subscription_puts_the_job_back_and_pauses_only_that_coworker(self):
+        self.make([H.issue(5), H.issue(6)])
+        self.d.once()
+        agent = self.d.store.get_job("5")["agent"]
+        other = self.d.store.get_job("6")["agent"]
+        for b in self.d.cfg["builders"]:
+            if b["id"] == agent:
+                b["provider"] = "openrouter"
+        self.spend(agent)
+        self.d.once()
+        self.assertEqual(self.state(5), "queued")
+        self.assertIsNone(self.hold_until())
+        self.assertIn(agent, strikes.held(self.d.store, self.w.clock))
+        self.w.clock += 60
+        self.d.once()
+        self.assertEqual(len(self.w.sends), 2)
+        self.w.finish(other, H.PR_LINE)
+        self.w.clock += 60
+        self.d.once()
+        self.d.once()
+        self.assertEqual(self.d.store.get_job("5")["agent"], other)
+        self.assertEqual(self.state(5), "building")
+
 
 
 if __name__ == "__main__":

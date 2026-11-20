@@ -633,8 +633,9 @@ class Dispatcher:
         total = self.cfg.get("slots")
         if not total:
             return None
-        if not (self.cfg.get("held_plan") and self.off_subscription()):
-            total = self.pace_slots(total)
+        paced = self.pace_slots(total)
+        if paced < total:
+            total = min(total, paced + self.off_subscription_runs())
         waiting = {}
         for j in self.jobs():
             s = slots.station(j)
@@ -644,8 +645,8 @@ class Dispatcher:
             waiting["resolve"] = n
         return slots.quotas(waiting, len(self.running()), total)
 
-    def off_subscription(self):
-        return any((c.get("provider") or "claude") != "claude" for t in pools.types(self.cfg).values() for c in t["coworkers"])
+    def off_subscription_runs(self):
+        return sum(c["runs"] for t in pools.types(self.cfg).values() for c in t["coworkers"] if (c.get("provider") or "claude") != "claude")
 
     def take(self, j):
         if self.quota is None:
@@ -691,7 +692,9 @@ class Dispatcher:
         return self.warm_pick(j, pools.free_copies(cfg, worker, self.running()))
 
     def with_holds(self, cfg):
-        return dict(cfg, held=self.cfg.get("held"), held_plan=self.cfg.get("held_plan"))
+        now = self.now()
+        return dict(cfg, held=bool(self.cfg.get("held") or holds.blocks_all(self.store, now)),
+                    held_plan=holds.blocks_subscription(self.store, now))
 
     def cache_kind(self, agent):
         for t in (self.cfg.get("types") or {}).values():
@@ -1189,9 +1192,15 @@ class Dispatcher:
         return self.failed_attempt(j, why, "ended")
 
     def plan_limit_or_fail(self, j, why, error):
-        if pools.provider_of(self.cfg, j.get("agent")) != "claude":
-            return self.failed_attempt(j, why, "ended")
-        return self.plan_limit(j, why, error)
+        if pools.provider_of(self.cfg, j.get("agent")) == "claude":
+            return self.plan_limit(j, why, error)
+        self.store.close_run(j["run"], "error", error=why[:200], **self.kept_tokens(j["run"]))
+        strikes.fail(self.store, j["agent"], self.now(), 1, holds.PLAN_LIMIT_HOLD_S)
+        j.update(state=BACK[j["state"]], retry_attempt=j.get("attempt", 1), sending=None)
+        self.save(j, "spent key: %s" % error[:160])
+        log(j["issue"], "spent key on %s, back to %s; that coworker held for %d s: %s" % (
+            self.names.get(j["agent"], j["agent"][:8]), j["state"], holds.PLAN_LIMIT_HOLD_S, error[:160]))
+        return None
 
     def close_stale(self):
         ids = {n: a for a, n in self.names.items()}
