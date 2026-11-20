@@ -1,7 +1,7 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import { getSharedDb, readSharedDbSchema, recordTableOwnership, SHARED_HIDDEN_TABLES } from '../../db/sharedDb.js'
-import { assertNoAttach, assertReadOnlySql, executeStore, listTables, serializeRow } from '../../db/sqlStore.js'
+import { assertSharedTableOwnership, getSharedDb, readSharedDbSchema, recordTableOwnership, SHARED_HIDDEN_TABLES } from '../../db/sharedDb.js'
+import { assertReadOnlySql, executeStore, listTables, serializeRow } from '../../db/sqlStore.js'
 import type { RunContext } from '../../runtime/context.js'
 
 const MAX_OUTPUT = 50_000
@@ -60,8 +60,10 @@ export function sharedDbTools(ctx: RunContext): ToolSet {
             execute: async ({ sql, params, statements }) => {
                 try {
                     const client = await getSharedDb()
+                    const sqlList = statements?.map(s => s.sql) ?? (sql ? [sql] : [])
+                    await assertSharedTableOwnership(client, sqlList, agentName)
                     const result = await executeStore(client, { sql, params, statements })
-                    await recordTableOwnership(client, statements?.map(s => s.sql) ?? (sql ? [sql] : []), agentName)
+                    await recordTableOwnership(client, sqlList, agentName)
                     const lastId = result.lastInsertRowid !== null ? `, lastInsertRowid=${result.lastInsertRowid}` : ''
                     return `OK, ${result.statements} statement(s), ${result.rowsAffected} row(s) affected${lastId}`
                 } catch (e) {

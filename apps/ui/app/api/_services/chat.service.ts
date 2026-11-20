@@ -7,6 +7,7 @@ import type { EngineConnection, EngineRun, SessionSource } from '@/lib/engine/ty
 import { FOREMAN_AGENT_ID, type SessionKind, type Usage } from '@moldwright/contracts'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectMany, selectManyWithJoins, selectMaybeSingle, selectMaybeSingleWithJoins } from '@/supabase/supabase-helpers'
+import { isSubscriptionEntitled } from '@moldwright/cloud/billing'
 import { isTemplateContentLocked } from '@/lib/templates/content-lock'
 import { isPlanLimited } from './capacity.service'
 import { findWorkspaceEngine, NoEngineError, type WorkspaceEngine } from './workspace-engine.service'
@@ -44,7 +45,7 @@ async function fetchAgentRow(agentId: string) {
         'agents',
         ['workspace_id', 'space_id', 'engine_agent_id', 'template_id', 'disabled_at', 'disabled_reason'] as const,
         {
-            workspaces: { table: 'workspaces', foreignKey: 'workspaces', columns: ['subscription_status', 'is_sandbox'] },
+            workspaces: { table: 'workspaces', foreignKey: 'workspaces', columns: ['subscription_status', 'is_sandbox', 'boxes_disabled_at', 'boxes_archived_at'] },
             space: { table: 'spaces', foreignKey: 'spaces', columns: ['visibility'] },
         } as const,
         { id: agentId },
@@ -69,6 +70,9 @@ function buildTarget(row: NonNullable<Awaited<ReturnType<typeof fetchAgentRow>>>
 export async function resolveAgentTargetForTrigger(agentId: string): Promise<AgentChatTarget | null> {
     const row = await fetchAgentRow(agentId)
     if (!row || row.disabled_at || !row.engine_agent_id) return null
+    const ws = row.workspaces
+    if (ws?.boxes_disabled_at || ws?.boxes_archived_at) return null
+    if (ws && !ws.is_sandbox && !isSubscriptionEntitled(ws.subscription_status)) return null
     const engine = await findWorkspaceEngine(row.workspace_id)
     if (!engine) return null
     return {

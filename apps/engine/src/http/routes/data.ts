@@ -26,7 +26,8 @@ function failure(c: Context, err: unknown, fallback: string) {
 
 function toCsvValue(value: unknown): string {
     if (value === null || value === undefined) return ''
-    const str = typeof value === 'object' ? JSON.stringify(value) : String(value)
+    let str = typeof value === 'object' ? JSON.stringify(value) : String(value)
+    if (typeof value !== 'number' && /^[=+\-@\t\r]/.test(str) && !/^[-+]?\d+(?:\.\d+)?$/.test(str)) str = `'${str}`
     if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`
     return str
 }

@@ -9,7 +9,24 @@ export const runtime = 'nodejs'
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/
 const FIRE_TIMEOUT_MS = 15_000
+const RATE_WINDOW_MS = 60_000
+const RATE_LIMIT_BURST = 60
+const triggerWindows = new Map<string, { count: number; resetAt: number }>()
 
+function allowTriggerBurst(key: string): boolean {
+    const now = Date.now()
+    if (triggerWindows.size > 4096) {
+        for (const [k, v] of triggerWindows) if (v.resetAt <= now) triggerWindows.delete(k)
+    }
+    const cur = triggerWindows.get(key)
+    if (!cur || cur.resetAt <= now) {
+        triggerWindows.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS })
+        return true
+    }
+    if (cur.count >= RATE_LIMIT_BURST) return false
+    cur.count += 1
+    return true
+}
 type Params = { params: Promise<{ agentId: string; slug: string; token: string }> }
 
 function notFound(): Response {
@@ -24,6 +41,11 @@ async function handle(req: Request, ctx: Params): Promise<Response> {
         console.info(`[trigger] ${agentId}/${slug} not fired: passive visit from "${req.headers.get('user-agent') ?? 'unknown'}"`)
         return new Response(null, { status: 204 })
     }
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local'
+    if (!allowTriggerBurst(`${agentId}:${slug}:${ip}`)) {
+        return Response.json({ error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': '60' } })
+    }
+
 
     const raw = await readBodyCapped(req, MAX_TRIGGER_BODY_BYTES)
     if (raw === null) return Response.json({ error: 'Payload too large' }, { status: 413 })

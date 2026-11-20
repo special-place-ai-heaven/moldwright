@@ -100,6 +100,22 @@ export async function renameTableOwner(client: Client, fromAgentName: string, to
     await client.execute({ sql: `UPDATE ${META_TABLE} SET created_by = ? WHERE created_by = ?`, args: [toAgentName, fromAgentName] })
 }
 
+const DESTRUCTIVE_SHARED_TABLE = new RegExp(String.raw`\b(?:drop\s+table(?:\s+if\s+exists)?|alter\s+table|delete\s+from)\s+(${IDENT})`, 'gi')
+
+export async function assertSharedTableOwnership(client: Client, statements: string[], agentName: string): Promise<void> {
+    const stripped = statements.map(stripComments)
+    const targets = new Set<string>()
+    for (const sql of stripped) {
+        for (const [name] of matches(DESTRUCTIVE_SHARED_TABLE, sql)) targets.add(name)
+    }
+    if (targets.size === 0) return
+    const owners = await tableOwners(client)
+    for (const table of targets) {
+        const owner = owners.get(table)
+        if (owner && owner !== agentName) throw new Error(`Table "${table}" belongs to ${owner}; only ${owner} can drop, alter, or delete from it.`)
+    }
+}
+
 export async function readSharedDbSchema(options: SchemaOptions = {}): Promise<string> {
     if (!sharedDbExists()) return ''
     const client = await getSharedDb()

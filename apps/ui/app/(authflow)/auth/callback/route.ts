@@ -7,6 +7,7 @@ import { PENDING_INVITE_COOKIE } from '@/lib/auth/pending-invite'
 import { AUTH_RETURN_COOKIE, readAuthReturnCookie } from '@/lib/auth/auth-return'
 import { routes } from '@/lib/routes'
 import { selectMaybeSingle } from '@/supabase/supabase-helpers'
+import { site } from '@/lib/site'
 import { SIGNUP_INTENT_COOKIE } from '@moldwright/analytics'
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -15,9 +16,9 @@ import { NextResponse } from 'next/server'
 
 function publicUrl(request: Request, destination: string): string {
     const { origin } = new URL(request.url)
-    const forwardedHost = request.headers.get('x-forwarded-host')
-    if (process.env.NODE_ENV === 'development' || !forwardedHost) return `${origin}${destination}`
-    return `https://${forwardedHost}${destination}`
+    if (process.env.NODE_ENV === 'development') return `${origin}${destination}`
+    const configured = (process.env.NEXT_PUBLIC_APP_URL ?? site.url).replace(/\/$/, '')
+    return `${configured}${destination}`
 }
 
 const SIGNUP_STAMP_WINDOW_MS = 2 * 60 * 1000

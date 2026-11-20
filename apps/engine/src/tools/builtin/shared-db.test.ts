@@ -71,8 +71,9 @@ describe('shared database tools', () => {
         expect(await run(bob, 'shared_db_execute', {})).toBe('Execution failed: Provide either sql or statements.')
     })
 
-    it('forgets the owner of a dropped table and hides its own bookkeeping', async () => {
-        await run(alice, 'shared_db_execute', { sql: 'DROP TABLE deals' })
+    it('blocks another coworker from dropping an owned table, forgets the owner when its creator drops it, and hides its own bookkeeping', async () => {
+        expect(await run(alice, 'shared_db_execute', { sql: 'DROP TABLE deals' })).toContain('belongs to bob')
+        await run(bob, 'shared_db_execute', { sql: 'DROP TABLE deals' })
         const schema = await run(alice, 'shared_db_schema', {})
         expect(schema).toBe('leads(email TEXT, score INTEGER) created by alice')
         expect(schema).not.toContain('_rerun_shared_tables')
