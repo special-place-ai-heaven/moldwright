@@ -114,9 +114,9 @@ class Status(unittest.TestCase):
     def test_a_broken_plan_record_still_posts_the_digest(self):
         self.make()
         self.capture()
-        self.d.store.set("plan:12", "state", "reviewing")
+        self.d.store.set_many("plan:12", (("agent", "p1"), ("copy", "bad"), ("state", "reviewing")))
         out = self.d.status({"digest": {"k": 1}, "holds": []})
-        self.assertEqual((out["k"], out["holds"], out["planner_error"]), (1, [], "KeyError"))
+        self.assertEqual((out["k"], out["holds"], out["planner_error"]), (1, [], "ValueError"))
 
     def test_the_digest_goes_out_when_the_app_report_fails(self):
         self.make(fail=RuntimeError("down"))

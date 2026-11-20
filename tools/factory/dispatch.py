@@ -661,7 +661,7 @@ class Dispatcher:
         return self.own() + list(self.others())
 
     def unresolved(self):
-        return {j["agent"] for j in self.jobs() if j["state"] not in END and j.get("agent") and j.get("sending") and not j.get("run")}
+        return {j["agent"] for j in self.jobs() if j["state"] in RUNNING and j.get("agent") and not j.get("run")}
 
     def held_ids(self):
         return set(strikes.held(self.store, self.now()))
@@ -1158,6 +1158,9 @@ class Dispatcher:
         return (senior_brief if j.get("level") and not j.get("same_round") else fix_brief)(j, j["pr"], j["review"])
 
     def finished_run(self, j):
+        if not j.get("run"):
+            j["sending"] = j.get("sending") or j.get("sending_step") or j["state"]
+            return self.lost_run(j)
         r = self.account("get_run", {"agentId": j["agent"], "runId": j["run"]})
         if r.get("status") == "running":
             return self.clock_check(j, r)

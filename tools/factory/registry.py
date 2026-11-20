@@ -38,7 +38,7 @@ KV_STATUS = {
 }
 KEYS = ("state", "started", "why", "name", "agent", "sends", "run", "fire")
 LIVE_KV = {"plan": set(STEPS["plan"]) - {"cut", "blocked", "lost"}, "recheck": {"sending", "running"},
-           "accept": set(STEPS["accept"]) - {"accepted", "closed"}, "instr": {"review", "unsent"}}
+           "accept": {"running", "unsent", "no_acceptor"}, "instr": {"review", "unsent"}}
 
 
 def iso(v):
@@ -116,15 +116,18 @@ def kv_row(station, n, rec, stamp):
         status = "retry" if int(rec.get("sends") or 0) > 0 else "sent"
     hand = None
     if status:
+        started = iso(rec.get("started"))
+        moved_at = (stamp or {}).get("at")
+        since = max(moved_at, started) if status == "taken" and moved_at and started else (moved_at or started)
         hand = {"status": status, "from": (stamp or {}).get("prev"), "to": state,
-                "since": (stamp or {}).get("at") or iso(rec.get("started")), "why": rec.get("why") or None,
+                "since": since, "why": rec.get("why") or None,
                 "by": rec.get("name") or rec.get("agent")}
     return {"issue": n, "station": station, "state": state, "step": STEPS[station][state], "handover": hand,
             "live": state in LIVE_KV[station]}
 
 
 ORDER = (("recheck", True), ("job", True), ("accept", True), ("plan", True), ("instr", True), ("classify", True),
-         ("job", False), ("accept", False), ("plan", False), ("instr", False), ("recheck", False))
+         ("accept", False), ("job", False), ("plan", False), ("instr", False), ("recheck", False))
 
 
 def rows(data, now):

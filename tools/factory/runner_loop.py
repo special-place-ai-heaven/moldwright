@@ -190,6 +190,11 @@ class Runner:
             except E.EngineError as e:
                 log("cannot list runs of %s: %s" % (agent, e))
                 continue
+            sibling = self.st.db.execute("SELECT run_id FROM fires WHERE job=? AND stage=? AND intent_at=? AND run_id IS NOT NULL LIMIT 1",
+                                         (f["job"], f["stage"], f["intent_at"])).fetchone()
+            if sibling:
+                self.st.fired(f["id"], sibling[0])
+                continue
             taken = self.st.known_run_ids()
             rows = [r for r in rows if r and r["id"] not in taken]
             what, val = L.resolve_pending(f["intent_at"], f["slug"], rows, self.clock(), self.cfg.get("poll_s", POLL_S))
@@ -472,21 +477,34 @@ class Runner:
         job, ids = batch[0]["job"], [c["chunk"] for c in batch]
         exp = iso(self.clock() + 2 * self.cfg.get("run_limit_s", 600))
         payload = {"job": job, "stage": "build", "chunks": ids}
-        fid = self.st.dequeue_to_intent(self.st.enqueue(job, "build", ids[0], payload), job, ids[0], "build",
-                                        ent.get("coworker", ""), ent["slug"], batch[0]["paths"], exp)
-        fids = [fid]
-        for c in batch[1:]:
-            self.st.grant_lease(job, c["chunk"], c["paths"], exp, attempt=self.st.attempts(job, c["chunk"]))
-            fids.append(self.st.intent(job, c["chunk"], "build", ent.get("coworker", ""), ent["slug"]))
-        for c in ids:
-            self.st.set_ready_state(job, c, "running")
+        at = iso(self.clock())
+        self.st.db.execute("BEGIN IMMEDIATE")
+        try:
+            fid = self.st.intent(job, ids[0], "build", ent.get("coworker", ""), ent["slug"], at=at)
+            self.st.grant_lease(job, ids[0], batch[0]["paths"], exp, attempt=self.st.attempts(job, ids[0]))
+            fids = [fid]
+            for c in batch[1:]:
+                self.st.grant_lease(job, c["chunk"], c["paths"], exp, attempt=self.st.attempts(job, c["chunk"]))
+                fids.append(self.st.intent(job, c["chunk"], "build", ent.get("coworker", ""), ent["slug"], at=at))
+            for c in ids:
+                self.st.set_ready_state(job, c, "running")
+            self.st.db.execute("COMMIT")
+        except BaseException:
+            self.st.db.execute("ROLLBACK")
+            raise
         try:
             run_id, _ = T.fire(self.eng, ent["agent"], ent["slug"], token, payload)
         except T.TriggerError as e:
             log("fire of batch %s failed (kept as intents): %s" % (ids, e))
             return None
-        for f in fids:
-            self.st.fired(f, run_id)
+        self.st.db.execute("BEGIN IMMEDIATE")
+        try:
+            for f in fids:
+                self.st.fired(f, run_id)
+            self.st.db.execute("COMMIT")
+        except BaseException:
+            self.st.db.execute("ROLLBACK")
+            raise
         return run_id
 
     def start_ready(self):

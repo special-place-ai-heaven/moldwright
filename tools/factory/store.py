@@ -103,15 +103,29 @@ class Store:
                 raise Refused("the ledger %s holds rows and names no project" % os.path.basename(self.path))
             self.set("-", "project_of", project)
 
+    def _tx(self):
+        if self.db.in_transaction:
+            return False
+        self.db.execute("BEGIN IMMEDIATE")
+        return True
+
     def intent(self, job, chunk, stage, coworker="", slug="", at=None, model=None, thinking=None):
-        n = self.db.execute("SELECT COUNT(*) FROM fires WHERE job=? AND chunk=? AND stage=?",
-                            (job, chunk, stage)).fetchone()[0]
-        cur = self.db.execute(
-            "INSERT INTO fires(job,chunk,stage,coworker,slug,intent_at,refire,model,thinking) VALUES(?,?,?,?,?,?,?,?,?)",
-            (job, chunk, stage, coworker, slug, at or now(), n, model, thinking))
-        self._seen(job, chunk)
-        self.db.execute("UPDATE ready_chunks SET attempts=MAX(attempts,?) WHERE job=? AND chunk=?", (n, job, chunk))
-        return cur.lastrowid
+        started = self._tx()
+        try:
+            n = self.db.execute("SELECT COUNT(*) FROM fires WHERE job=? AND chunk=? AND stage=?",
+                                (job, chunk, stage)).fetchone()[0]
+            cur = self.db.execute(
+                "INSERT INTO fires(job,chunk,stage,coworker,slug,intent_at,refire,model,thinking) VALUES(?,?,?,?,?,?,?,?,?)",
+                (job, chunk, stage, coworker, slug, at or now(), n, model, thinking))
+            self._seen(job, chunk)
+            self.db.execute("UPDATE ready_chunks SET attempts=MAX(attempts,?) WHERE job=? AND chunk=?", (n, job, chunk))
+            if started:
+                self.db.execute("COMMIT")
+            return cur.lastrowid
+        except BaseException:
+            if started:
+                self.db.execute("ROLLBACK")
+            raise
 
     def fired(self, fire_id, run_id):
         self.db.execute("UPDATE fires SET run_id=?, status='running' WHERE id=? AND status='intent'",
@@ -158,19 +172,50 @@ class Store:
         known = {r[0] for r in self.db.execute(f"SELECT run_id FROM fires WHERE run_id IN ({q})", ids)}
         return [i for i in ids if i not in known]
 
-    def set(self, job, k, v):
+    def _set(self, job, k, v):
         self.db.execute("INSERT INTO kv VALUES(?,?,?) ON CONFLICT(job,k) DO UPDATE SET v=excluded.v", (job, k, str(v)))
         if k == "state":
             self.db.execute("INSERT INTO moves VALUES(?,?,NULL,?) ON CONFLICT(job) DO UPDATE SET prev=moves.state, "
                             "state=excluded.state, at=excluded.at WHERE moves.state != excluded.state", (job, str(v), now()))
+
+    def set(self, job, k, v):
+        started = self._tx()
+        try:
+            self._set(job, k, v)
+            if started:
+                self.db.execute("COMMIT")
+        except BaseException:
+            if started:
+                self.db.execute("ROLLBACK")
+            raise
+
+    def set_many(self, job, items):
+        started = self._tx()
+        try:
+            for k, v in items:
+                self._set(job, k, v)
+            if started:
+                self.db.execute("COMMIT")
+        except BaseException:
+            if started:
+                self.db.execute("ROLLBACK")
+            raise
 
     def moved(self, job):
         r = self.db.execute("SELECT state, prev, at FROM moves WHERE job=?", (job,)).fetchone()
         return dict(r) if r else None
 
     def forget(self, job):
-        self.db.execute("DELETE FROM kv WHERE job=?", (job,))
-        self.db.execute("DELETE FROM moves WHERE job=?", (job,))
+        started = self._tx()
+        try:
+            self.db.execute("DELETE FROM kv WHERE job=?", (job,))
+            self.db.execute("DELETE FROM moves WHERE job=?", (job,))
+            if started:
+                self.db.execute("COMMIT")
+        except BaseException:
+            if started:
+                self.db.execute("ROLLBACK")
+            raise
 
     def get_all(self, job):
         return {r["k"]: r["v"] for r in self.db.execute("SELECT k,v FROM kv WHERE job=?", (job,))}
@@ -409,7 +454,9 @@ class Store:
                     continue
                 self._write_job(str(key), state, job, "imported", None, None)
                 n += 1
-            self.set("-", "imported_json", now())
+            for r in self.db.execute("SELECT job, v FROM kv WHERE k='state'").fetchall():
+                self.db.execute("INSERT OR IGNORE INTO moves VALUES(?,?,NULL,?)", (r[0], r[1], now()))
+            self._set("-", "imported_json", now())
             self.db.execute("COMMIT")
         except BaseException:
             self.db.execute("ROLLBACK")

@@ -122,7 +122,7 @@ class Station:
         return {n: r for n, r in self.records().items() if r.get("state") == "running"}
 
     def running(self):
-        return [(r["agent"], int(r["copy"])) for r in self.live().values()]
+        return [(r["agent"], int(r["copy"])) for r in self.live().values() if r.get("agent") and r.get("copy")]
 
     def open_children(self, n):
         raw = json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "open", "--json", "number,body",
@@ -188,9 +188,8 @@ class Station:
         sends = int(row.get("sends", 0)) + 1
         message = brief(self.repo, parent, plan(parent.get("comments") or []), children, others, cut)
         fire = self.store.intent(job, "", "accept", coworker=name)
-        for k, v in (("state", "running"), ("agent", agent), ("copy", copy), ("started", self.now()), ("run", ""),
-                     ("fire", fire), ("sends", sends), ("name", name)):
-            self.store.set(job, k, v)
+        self.store.set_many(job, (("agent", agent), ("copy", copy), ("started", self.now()), ("run", ""),
+                                  ("fire", fire), ("sends", sends), ("name", name), ("state", "running")))
         args = {"agentId": agent, "message": message, "waitSeconds": 1,
                 "goal": {"lastLineForms": [dict(f) for f in FORMS], "turnLimit": 3}}
         try:
@@ -208,8 +207,9 @@ class Station:
 
     def poll(self, n, row):
         sends = int(row.get("sends", 0))
-        if not row.get("run"):
-            self.store.abandon(int(row["fire"]), "the send was cut off before a run id was kept")
+        if not row.get("run") or not row.get("agent") or not row.get("started"):
+            if str(row.get("fire", "")).isdigit():
+                self.store.abandon(int(row["fire"]), "the send was cut off before a run id was kept")
             return self.ask_again(n, sends, "the send was cut off before a run id was kept")
         agent, run = row["agent"], row["run"]
         got = self.account("get_run", {"agentId": agent, "runId": run}) or {}
@@ -236,16 +236,14 @@ class Station:
             self.store.set("accept:%d" % n, "state", "unsent")
             self.log(n, "acceptance: %s; asked once more" % why)
         else:
-            self.store.set("accept:%d" % n, "state", "left")
-            self.store.set("accept:%d" % n, "left_at", self.now())
+            self.store.set_many("accept:%d" % n, (("left_at", self.now()), ("state", "left")))
             self.log(n, "acceptance left: %s" % why)
 
     def revive(self, n, row):
         if row.get("revived") or (row.get("left_at") and self.now() - float(row["left_at"]) < REVIVE_S):
             return row
         job = "accept:%d" % n
-        for k, v in (("revived", 1), ("sends", 0), ("state", "unsent")):
-            self.store.set(job, k, v)
+        self.store.set_many(job, (("sends", 0), ("revived", 1), ("state", "unsent")))
         self.log(n, "acceptance gets one fresh round after it was left")
         return self.store.get_all(job)
 
