@@ -364,7 +364,6 @@ class Checks(Base):
         runs = [{"id": 1, "workflow_id": 1, "name": "No stubs or switched-off tests", "status": "completed", "conclusion": "success"}]
         self.assertEqual(D.checks_verdict(runs, required)[0], "WAIT")
 
-        # All 5 present with CI success passes
         all_runs = [
             {"id": 1, "workflow_id": 1, "name": "No stubs or switched-off tests", "status": "completed", "conclusion": "success"},
             {"id": 2, "workflow_id": 2, "name": "CI", "status": "completed", "conclusion": "success"},
@@ -374,13 +373,11 @@ class Checks(Base):
         ]
         self.assertEqual(D.checks_verdict(all_runs, required), ("OK", None))
 
-        # CI skipped is refused
         ci_skipped = [
             dict(r, conclusion="skipped") if r["name"] == "CI" else r for r in all_runs
         ]
         self.assertEqual(D.checks_verdict(ci_skipped, required), ("WAIT", "CI not successful"))
 
-        # Full-stack state machine check: missing gates hold the PR in checks state
         self.to_checks()
         self.cfg["required_workflows"] = required
         self.w.workflows[HEAD] = [wf("CI", "success", wid=1), wf("No comments in code", "success", wid=2)]
@@ -388,7 +385,6 @@ class Checks(Base):
         self.assertEqual(self.state(), "checks")
         self.assertEqual(self.w.merges, [])
 
-        # When all 5 register, merge proceeds
         self.w.workflows[HEAD] = [
             wf("CI", "success", wid=1),
             wf("No comments in code", "success", wid=2),
