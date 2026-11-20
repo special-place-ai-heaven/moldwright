@@ -5,7 +5,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set search_path to public, extensions;
 
-select plan(28);
+select plan(34);
 
 -- Fixtures: one workspace, an admin, a member scoped to `all`, a member scoped to `assigned`.
 insert into auth.users (id, email) values
@@ -114,5 +114,15 @@ select is((select count(*)::int from public.space_members where space_id = '0000
 insert into public.spaces (workspace_id, name, col_start, row_start, col_end, row_end) values (990001, 'Default', 20, 0, 23, 3);
 select is((select visibility from public.spaces where name = 'Default' and workspace_id = 990001), 'workspace', 'a new Box is open to the workspace');
 
+
+-- Baseline grant hardening: anon/authenticated never hold TRUNCATE, server-only tables reject browser SELECT, and credit RPCs reject browser EXECUTE.
+select ok(not has_table_privilege('anon', 'public.workspaces', 'TRUNCATE'), 'anon cannot truncate workspaces');
+select ok(not has_table_privilege('authenticated', 'public.workspaces', 'TRUNCATE'), 'authenticated cannot truncate workspaces');
+select ok(not has_table_privilege('authenticated', 'public.engine_pool', 'SELECT'), 'authenticated cannot select engine_pool');
+select ok(not has_table_privilege('authenticated', 'public.api_keys', 'SELECT'), 'authenticated cannot select api_keys');
+select ok(not has_function_privilege('anon', 'public.current_workspace_ids()', 'EXECUTE'), 'anon cannot execute current_workspace_ids');
+set local role authenticated;
+select throws_ok($$ select public.grant_rerun_topup(990001, 1000000) $$, '42501', null, 'authenticated cannot execute grant_rerun_topup');
+reset role;
 select * from finish();
 rollback;

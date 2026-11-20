@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { fakeSupabase, type SupabaseCall } from '@/test/supabase-fake'
@@ -143,5 +145,16 @@ describe('selectCount', () => {
         await selectCount(db.client, 'services', {}, 'slug')
 
         expect(db.chains[0][1].args).toEqual(['slug', { count: 'exact', head: true }])
+    })
+})
+
+describe('supabase baseline privilege migrations', () => {
+    it('revokes TRUNCATE across public tables and revokes browser EXECUTE on credit RPCs', () => {
+        const migrationsDir = resolve(process.cwd(), '../../supabase/migrations')
+        const files = readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort()
+        const combined = files.map(f => readFileSync(resolve(migrationsDir, f), 'utf8')).join('\n')
+        expect(combined).toMatch(/revoke\s+truncate,\s*trigger,\s*references\s+on\s+all\s+tables\s+in\s+schema\s+public\s+from\s+anon,\s*authenticated/i)
+        expect(combined).toMatch(/revoke\s+all\s+on\s+function\s+public\.grant_rerun_topup\(bigint,\s*bigint\)\s+from\s+public,\s*anon,\s*authenticated/i)
+        expect(combined).toMatch(/revoke\s+all\s+on\s+function\s+public\.consume_rerun_credit\(bigint,\s*bigint\)\s+from\s+public,\s*anon,\s*authenticated/i)
     })
 })
