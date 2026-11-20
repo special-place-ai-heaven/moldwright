@@ -159,6 +159,15 @@ class Start(unittest.TestCase):
         self.assertEqual([e for e in r.edits() if e[0] == "12"],
                          [("12", "factory-plan"), ("12", "-factory-plan"), ("12", "factory-plan")])
 
+    def test_torn_sending_record_does_not_raise_keyerror_in_station_once(self):
+        r = Rig()
+        r.store.db.execute("INSERT INTO kv VALUES('plan:12','state','sending')")
+        r.store.db.execute("INSERT INTO kv VALUES('recheck:5','state','sending')")
+        self.assertEqual(r.station.running(), [])
+        r.station.once(2)
+        self.assertEqual(r.store.get_all("plan:12").get("state"), "lost")
+        self.assertEqual(r.store.get_all("recheck:5").get("state"), "fresh")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -139,6 +139,19 @@ class Rows(Base):
         self.assertEqual(self.row(15)["step"], "intake")
         self.assertIsNone(self.row(16))
 
+    def test_accepted_parent_wins_over_older_returned_job_and_fresh_started_beats_stale_move(self):
+        self.job(10, "returned", at="2026-11-19T08:00:00Z")
+        self.kv("accept:10", state="accepted")
+        self.assertEqual(self.row(10)["step"], "done")
+
+        self.kv("accept:20", state="gaps", sends="1")
+        self.kv("plan:20", state="planning", agent="p1", started="2026-11-19T11:55:00Z")
+        self.assertEqual(self.row(20)["step"], "planning")
+
+        self.kv("plan:21", state="planning", agent="p1", started="2026-11-19T11:59:50Z")
+        self.s.db.execute("UPDATE moves SET at='2026-11-19T09:00:00Z' WHERE job='plan:21'")
+        self.assertFalse(registry.stuck(self.row(21), NOW, {}))
+
 
 class Summary(Base):
     def test_counts_steps_and_lists_stuck_handovers(self):

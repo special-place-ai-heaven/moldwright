@@ -1,6 +1,7 @@
-import unittest
+import os, tempfile, unittest
 
 import acceptance
+from store import Store
 
 
 def job(n, state, parent=None, pr=None, title=None):
@@ -91,6 +92,28 @@ class OutcomeTests(unittest.TestCase):
     def test_a_line_inside_a_code_fence_does_not_count(self):
         self.assertEqual(acceptance.outcome("```\nACCEPTED: fake\n```\n")[0], "none")
         self.assertEqual(acceptance.outcome("ACCEPTED: real\n```\nGAPS: #3\n```\n"), ("accepted", [], "ACCEPTED: real"))
+
+
+class TornWriteTests(unittest.TestCase):
+    def test_set_many_rolls_back_all_kv_fields_if_interrupted_mid_write(self):
+        tmp = tempfile.mkdtemp()
+        st = Store(os.path.join(tmp, "f.db"))
+        self.addCleanup(st.close)
+        self.assertTrue(hasattr(st, "set_many"))
+        with self.assertRaises(TypeError):
+            def bad_items():
+                yield ("state", "running")
+                raise TypeError("cut")
+            st.set_many("accept:10", bad_items())
+        self.assertEqual(st.get_all("accept:10"), {})
+        self.assertIsNone(st.moved("accept:10"))
+
+        st.db.execute("INSERT INTO kv VALUES('accept:11','state','running')")
+        cfg = {"repo": "o/r", "types": {"acceptor": {"coworkers": [{"id": "a1", "name": "A1", "runs": 1}]}}}
+        station = acceptance.Station(cfg, st, lambda *a: {}, lambda *a: "[]", lambda: 100.0, lambda *a: None)
+        self.assertEqual(station.running(), [])
+        station.once(2, [])
+        self.assertEqual(st.get_all("accept:11").get("state"), "unsent")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,16 @@ class StartBatch(unittest.TestCase):
         self.assertEqual(len(self.r.st.open_leases()), 3)
         self.assertEqual(self.r.st.ready_list(), [])
 
+    def test_fire_batch_writes_all_intents_and_fired_rows_atomically(self):
+        for c in ("A", "B"):
+            self.r.st.add_ready("j", c, paths=[c + ".py"])
+        self.r.start_ready()
+        fids = [r["id"] for r in self.r.st.running("j")]
+        self.assertEqual(len(fids), 2)
+        self.r.st.db.execute("UPDATE fires SET run_id=NULL, status='intent' WHERE id=?", (fids[1],))
+        self.r.resolve_pending()
+        self.assertEqual([r["status"] for r in self.r.st.running("j")], ["running", "running"])
+
 
 if __name__ == "__main__":
     unittest.main()
