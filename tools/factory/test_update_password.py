@@ -21,12 +21,13 @@ class MigrationPassword(unittest.TestCase):
         self.assertNotIn("-e SUPABASE_DB_URL=", runs[0])
         self.assertIn('--db-url \\"\\$SUPABASE_DB_URL\\"', runs[0])
 
-    def test_url_is_built_in_the_shell_and_dropped_after(self):
+    def test_url_encodes_password_picks_single_network_and_drains_before_migrating(self):
         text = logical()
-        self.assertRegex(text, r'(?m)^SUPABASE_DB_URL="postgresql://postgres:\$PW@db:5432/postgres\?sslmode=disable"$')
+        self.assertIn("encodeURIComponent", text)
+        self.assertIn("println $k", text)
+        self.assertLess(text.index("\nwait_drained\n"), text.index("db push"))
         self.assertRegex(text, r"(?m)^export SUPABASE_DB_URL$")
         self.assertRegex(text, r"(?m)^unset PW SUPABASE_DB_URL$")
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -205,6 +205,14 @@ class OneDeploy(unittest.TestCase):
         self.assertEqual([l for l in c.splitlines() if l.lstrip().startswith("docker compose") and "--yes" in l], [])
 
 
+    def test_gitattributes_enforces_lf_on_dockerfiles_and_factory(self):
+        with open(os.path.join(VPS, "..", "..", ".gitattributes"), encoding="utf-8") as f:
+            attrs = f.read()
+        self.assertIn("*.Dockerfile text eol=lf", attrs)
+        self.assertIn("tools/factory/** text eol=lf", attrs)
+        with open(os.path.join(VPS, "factory-runner.Dockerfile"), "rb") as f:
+            self.assertNotIn(b"\r\n", f.read())
+
 class ClaudeScript(unittest.TestCase):
     def setUp(self):
         self.c = code(read("dev-engine-claude.sh"))

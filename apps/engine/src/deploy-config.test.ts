@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 type Service = {
   image?: unknown
+  user?: unknown
   build?: { dockerfile?: unknown } | string
   environment?: Record<string, unknown> | unknown[]
   env_file?: unknown
@@ -74,5 +75,20 @@ describe('deploy config', () => {
     expect(offenders(a)).toEqual(['e'])
     expect(offenders(b)).toEqual(['e'])
     expect(offenders(c)).toEqual([])
+  })
+
+  it('runs the final stage of apps/ui/Dockerfile and webgate as non-root and pins compose image tags', () => {
+    const dockerfile = read('apps/ui/Dockerfile')
+    const stages = dockerfile.split(/^FROM\s+/m).slice(1)
+    const finalStage = stages[stages.length - 1] ?? ''
+    expect(finalStage).toMatch(/^USER\s+(?!root\b)\S+/m)
+
+    const vpsServices = services(read('deploy/vps/docker-compose.vps.yml'))
+    expect(vpsServices.webgate?.user).toBe('node')
+    for (const [name, svc] of Object.entries(vpsServices)) {
+      if (typeof svc.image === 'string') {
+        expect(svc.image, `${name} image tag`).not.toMatch(/:latest$/)
+      }
+    }
   })
 })
