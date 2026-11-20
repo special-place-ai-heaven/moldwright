@@ -76,7 +76,7 @@ class Fake:
     def __call__(self, args):
         self.calls.append(list(args))
         if args[:2] == ["issue", "list"]:
-            return json.dumps(self.rows)
+            return json.dumps([dict({"author": {"login": "special-place-administrator"}}, **r) for r in self.rows])
         return ""
 
 

@@ -23,6 +23,9 @@ PR_LINE = "Done.\nPR: https://github.com/o/r/pull/42"
 ACCEPT = "".join("EVIDENCE %d: shown\n" % n for n in range(1, 21)) + "VERDICT: ACCEPT @abcdef1"
 
 
+FACTORY = {"login": "app/moldwright-factory", "is_bot": True}
+
+
 class World:
     def __init__(self, issues=None):
         self.issues = issues if issues is not None else [{"number": 5, "title": "Fix x", "body": ready(), "comments": []}]
@@ -183,23 +186,23 @@ class World:
         if a[:2] == ["issue", "list"] and "--label" in a and a[a.index("--label") + 1] == "factory-paused":
             return json.dumps([{"number": i["number"]} for i in self.issues if "factory-paused" in i.get("labels", [])])
         if a[:2] == ["issue", "list"] and "--label" in a and a[a.index("--label") + 1] == "instructions":
-            return json.dumps([{"number": i["number"], "title": i["title"], "body": i["body"]} for i in self.issues
+            return json.dumps([{"number": i["number"], "title": i["title"], "body": i["body"], "author": i.get("author", FACTORY)} for i in self.issues
                                if "instructions" in i.get("labels", []) and i.get("state", "OPEN") == "OPEN"])
         if a[:2] == ["issue", "list"] and "number,title,body,labels" in a:
             return json.dumps([{"number": p["number"], "title": p["title"], "body": p["body"], "labels": [{"name": x} for x in p["labels"]]}
                                for p in self.problems if p["state"] == "OPEN"])
         if a[:2] == ["issue", "list"] and "--label" not in a and "--search" not in a and any(i.get("labels") for i in self.issues):
-            return json.dumps([{"number": i["number"], "title": i["title"], "labels": i["labels"], "createdAt": i.get("createdAt", "")}
+            return json.dumps([{"number": i["number"], "title": i["title"], "labels": i["labels"], "createdAt": i.get("createdAt", ""), "author": i.get("author", FACTORY)}
                                for i in self.issues if i.get("labels")])
         if a[:2] == ["issue", "list"] and "--label" not in a:
             return json.dumps([{"number": n} for n in sorted(self.open_numbers)])
         if a[:2] == ["issue", "list"]:
-            return json.dumps([{"number": i["number"], "title": i["title"], "body": i["body"], "labels": [{"name": x} for x in i.get("labels", [])]}
+            return json.dumps([{"number": i["number"], "title": i["title"], "body": i["body"], "labels": [{"name": x} for x in i.get("labels", [])], "author": i.get("author", FACTORY)}
                                for i in self.issues if i["number"] not in self.unlabelled])
         if a[:2] == ["issue", "view"]:
             i = self.issue(a[2])
             return json.dumps({"title": i.get("title", ""), "state": i.get("state", "OPEN"), "body": i["body"],
-                               "comments": [{"body": c} for c in i["comments"]]})
+                               "comments": [{"body": c, "author": FACTORY} for c in i["comments"]]})
         if a[:2] == ["issue", "close"]:
             self.closed.append((int(a[2]), a[a.index("--comment") + 1]))
             for i in self.issues:

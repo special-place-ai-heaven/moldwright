@@ -16,7 +16,7 @@ class ControlWorld(World):
             self.gh_calls.append(a)
             if self.control_body is None:
                 return "[]"
-            return json.dumps([{"number": 99, "title": "Factory control", "body": self.control_body}])
+            return json.dumps([{"number": 99, "title": "Factory control", "body": self.control_body, "author": {"login": "special-place-administrator"}}])
         if a[:3] == ["issue", "comment", "99"]:
             self.gh_calls.append(a)
             self.control_comments.append(a[a.index("--body") + 1])

@@ -25,7 +25,7 @@ class Rig(T.Rig):
 
 
 def rig(labels, state, refuse=(), children=None, refuse_comment=0):
-    T.BACKLOG[:] = [{"number": 12, "title": "T12", "labels": [{"name": n} for n in labels], "createdAt": "2026-11-05T00:00:00Z"}]
+    T.BACKLOG[:] = [{"number": 12, "title": "T12", "labels": [{"name": n} for n in labels], "createdAt": "2026-11-05T00:00:00Z", "author": {"login": "special-place-administrator"}}]
     r = Rig(refuse=refuse, children=children, refuse_comment=refuse_comment)
     for k, v in dict(OLD, state=state).items():
         r.store.set("plan:12", k, v)

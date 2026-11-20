@@ -9,7 +9,7 @@ CFG = {"repo": "o/r", "types": {"planner": {"coworkers": [
 
 
 def issue(n, label, created):
-    return {"number": n, "title": "T%d" % n, "labels": [{"name": label}], "createdAt": created}
+    return {"number": n, "title": "T%d" % n, "labels": [{"name": label}], "createdAt": created, "author": {"login": "special-place-administrator"}}
 
 
 BACKLOG = [issue(11, "P0", "2026-11-10T00:00:00Z"), issue(12, "P0", "2026-11-05T00:00:00Z"),

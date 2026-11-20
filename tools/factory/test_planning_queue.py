@@ -7,7 +7,7 @@ PLANNER = {"coworkers": [{"id": "p1", "name": "One", "runs": 1}]}
 
 
 def backlog():
-    return [{"number": 11, "title": "T11", "labels": [{"name": "P0"}], "createdAt": "2026-11-10T00:00:00Z"}]
+    return [{"number": 11, "title": "T11", "labels": [{"name": "P0"}], "createdAt": "2026-11-10T00:00:00Z", "author": TD.FACTORY}]
 
 
 class PWorld(TD.World):

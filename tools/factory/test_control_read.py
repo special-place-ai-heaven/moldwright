@@ -41,7 +41,7 @@ class Fake:
         if args[:2] == ["issue", "list"]:
             if self.fail:
                 raise RuntimeError("down")
-            return json.dumps(self.rows)
+            return json.dumps([dict({"author": {"login": "special-place-administrator"}}, **r) for r in self.rows])
         return ""
 
     def reads(self):
@@ -76,7 +76,7 @@ class Read(unittest.TestCase):
         self.control(gh).tick(1)
         self.assertEqual(gh.calls, [[
             "issue", "list", "-R", "o/r", "--state", "open", "--search", "Factory control in:title",
-            "--json", "number,title,body", "--limit", "20",
+            "--json", "number,title,body,author", "--limit", "20",
         ]])
         self.assertEqual(runs(self.cfg), {"code": 6, "LARRY": 1, "LINUS": 3})
         self.assertEqual(self.store.events(), [])

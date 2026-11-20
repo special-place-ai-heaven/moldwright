@@ -45,6 +45,7 @@ import snapshot
 import states
 import store as ledger_store
 import strikes
+import trust
 import waits
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -804,7 +805,8 @@ class Dispatcher:
         if all(r <= 0 for r in rooms.values()):
             return
         issues = json.loads(self.gh(["issue", "list", "-R", self.repo, "--label", self.label, "--state", "open",
-                                     "--json", "number,title,labels,body", "--limit", "100"]))
+                                     "--json", "number,title,labels,body,author", "--limit", "100"]))
+        issues = [i for i in issues if trust.trusted(i)]
         paused = {i["number"] for i in issues if PAUSED in {x.get("name") for x in i.get("labels") or [] if isinstance(x, dict)}}
         issues = [i for i in issues if i["number"] not in paused]
         for i in issues:

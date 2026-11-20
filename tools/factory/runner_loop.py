@@ -3,7 +3,7 @@ import argparse, base64, json, os, signal, subprocess, sys, tempfile, threading,
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import applypatch as AP, batch as BT, checkout as CO, engine as E, evidence as EV, factory as F, ghclient as GH, intake as IN, limits as L, roster, publish as PB, followups as FU, readyq as RQ, repo_events as RE, store as S, testrun as TR, trigger as T, wake
+import applypatch as AP, batch as BT, checkout as CO, engine as E, evidence as EV, factory as F, ghclient as GH, intake as IN, limits as L, roster, publish as PB, followups as FU, readyq as RQ, repo_events as RE, store as S, testrun as TR, trigger as T, trust, wake
 from publish import body as pr_body
 
 POLL_S = 30
@@ -545,12 +545,6 @@ def stage_evidence(gh, st, f):
     except GH.GhError as e:
         return "NONE", str(e)
 
-TRUSTED_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
-FACTORY_LOGINS = ("special-place-administrator", "moldwright-factory[bot]")
-
-def _trusted(item):
-    return item.get("author_association") in TRUSTED_ASSOCIATIONS or (item.get("user") or {}).get("login") in FACTORY_LOGINS
-
 def dev_roster(gh):
     try:
         got = gh.get("/contents/tools/factory/roster.json?ref=dev")
@@ -562,8 +556,8 @@ def dev_roster(gh):
 
 def intake_issue(st, gh, repo, n, base_branch="dev"):
     issue = gh.issue(n)
-    parts = [issue.get("body") or ""] if _trusted(issue) else []
-    text = "\n".join(parts + [c.get("body") or "" for c in gh.comments(n) if _trusted(c)])
+    parts = [issue.get("body") or ""] if trust.trusted(issue) else []
+    text = "\n".join(parts + [c.get("body") or "" for c in gh.comments(n) if trust.trusted(c)])
     meta = {"repo_url": "https://github.com/" + repo, "title": issue["title"], "base_branch": base_branch}
     sha = gh.branch_sha(base_branch)
     state, errors = IN.register(st, str(n), meta, text, dev_roster(gh))

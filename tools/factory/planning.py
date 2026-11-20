@@ -10,6 +10,7 @@ import notes
 import plancheck
 import pools
 import tiers
+import trust
 
 DEV = re.compile(r"(?m)^PLAN READY\b[^\n]*\bdev (?:at )?([0-9a-f]{7,40})\b")
 FINAL = re.compile(r"(?m)^(CUT|BLOCKED):[ \t]*(.*)$")
@@ -273,7 +274,7 @@ def answer_of(question, view):
     options = question.get("options") or []
     for c in reversed(view.get("comments") or []):
         found = ANSWER.findall(c.get("body") or "")
-        if not found:
+        if not found or not trust.trusted(c):
             continue
         text = found[-1].strip()
         if text.isdigit() and 1 <= int(text) <= len(options):
@@ -793,7 +794,7 @@ class Station:
 
     def latest_plan(self, n):
         view = json.loads(self.gh(["issue", "view", str(n), "-R", self.repo, "--json", "title,body,comments"]))
-        plans = [c.get("body") or "" for c in view.get("comments", []) if (c.get("body") or "").startswith("## Plan")]
+        plans = [c.get("body") or "" for c in view.get("comments", []) if (c.get("body") or "").startswith("## Plan") and trust.trusted(c)]
         return plans[-1] if plans else None
 
     def free_critic(self, r):
@@ -1204,7 +1205,8 @@ class Station:
         if queued >= self.cfg.get("planning", {}).get("max_queue", MAX_QUEUE):
             return
         issues = json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "open", "--json",
-                                     "number,title,labels,createdAt", "--limit", "1000"]))
+                                     "number,title,labels,createdAt,author", "--limit", "1000"]))
+        issues = [i for i in issues if trust.trusted(i)]
         records = self.records()
         held = bool(self.cfg.get("held") or self.cfg.get("held_plan"))
         if held != self.held:

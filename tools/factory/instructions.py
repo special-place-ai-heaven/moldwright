@@ -3,6 +3,7 @@ import json
 import re
 
 import pools
+import trust
 
 FORMS = ({"prefix": "VERDICT: ", "rest": "sentence"},)
 
@@ -159,9 +160,9 @@ class Station:
 
     def intake(self, busy):
         found = json.loads(self.gh(["issue", "list", "-R", self.repo, "--label", "instructions", "--state", "open",
-                                    "--json", "number,title,body", "--limit", "20"]))
+                                    "--json", "number,title,body,author", "--limit", "20"]))
         records = self.records()
-        for issue in sorted(found, key=lambda i: i["number"]):
+        for issue in sorted((i for i in found if trust.trusted(i)), key=lambda i: i["number"]):
             n = issue["number"]
             if records.get(n, {}).get("state") not in (None, "unsent"):
                 continue

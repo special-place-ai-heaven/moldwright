@@ -4,6 +4,7 @@ import re
 import cutshape
 import escapes
 import pools
+import trust
 
 DONE = ("merged", "superseded")
 FORMS = ({"prefix": "ACCEPTED: ", "rest": "sentence"}, {"prefix": "GAPS: ", "rest": "sentence"})
@@ -35,7 +36,7 @@ def plan(comments):
     found = None
     for c in comments:
         body = c.get("body") or ""
-        if body.startswith("## Plan"):
+        if body.startswith("## Plan") and trust.trusted(c):
             found = body
     return found
 

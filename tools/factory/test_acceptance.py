@@ -32,7 +32,8 @@ class DueTests(unittest.TestCase):
 
 class PlanTests(unittest.TestCase):
     def test_plan_reads_the_latest_plan_comment(self):
-        cs = [{"body": "## Plan\nold"}, {"body": "chatter"}, {"body": "## Plan\nnew"}, {"body": "later chatter"}]
+        bot = {"login": "moldwright-factory"}
+        cs = [{"body": "## Plan\nold", "author": bot}, {"body": "chatter"}, {"body": "## Plan\nnew", "author": bot}, {"body": "later chatter"}]
         self.assertEqual(acceptance.plan(cs), "## Plan\nnew")
         self.assertIsNone(acceptance.plan([{"body": "x"}]))
         self.assertIsNone(acceptance.plan([]))

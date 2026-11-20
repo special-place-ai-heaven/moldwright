@@ -5,6 +5,7 @@ import re
 from fractions import Fraction
 
 import pools
+import trust
 
 EVERY = 5
 TITLE = "Factory control"
@@ -132,8 +133,8 @@ class Control:
     def issue(self):
         rows = json.loads(self.gh(["issue", "list", "-R", self.cfg["repo"], "--state", "open",
                                    "--search", "Factory control in:title",
-                                   "--json", "number,title,body", "--limit", "20"]))
-        return next((r for r in rows if r.get("title") == TITLE), None)
+                                   "--json", "number,title,body,author", "--limit", "20"]))
+        return next((r for r in rows if r.get("title") == TITLE and trust.trusted(r)), None)
 
     def tick(self, beat):
         if self.seen and beat % EVERY:
