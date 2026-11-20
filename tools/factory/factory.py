@@ -956,8 +956,8 @@ def cmd_risk(a):
         jobn = m.group(1) if m else None
         try:
             others = G.open_claims(full, n, jobn)
-        except G.NoAnswer as e:
-            die("risk: cannot list open work: " + str(e), 1)
+        except (G.NoAnswer, subprocess.SubprocessError, OSError, ValueError) as e:
+            die("risk: cannot list open work: " + str(e)[:200], 1)
         s8 = ((pr or {}).get("head") or {}).get("sha", "")[:8]
         verdict = {}
         for cm in sorted(api("repos/%s/issues/%s/comments?per_page=100" % (full, n), paginate=True) or [], key=lambda c: c["created_at"]):
@@ -986,6 +986,8 @@ def cmd_risk(a):
         print(jev_note)
     for line in claim_lines:
         print(line)
+    if ro and not claim_lines:
+        print("CLAIMS: none, no shared area with %d open PRs or jobs" % len(others))
     if not claims_ok:
         sys.exit(1)
 

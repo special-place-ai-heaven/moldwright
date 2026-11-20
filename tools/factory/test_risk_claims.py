@@ -1,4 +1,4 @@
-import contextlib, io, os, sys, unittest
+import contextlib, io, json, os, subprocess, sys, unittest
 from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import factory as F
@@ -9,7 +9,7 @@ H = "abcdef0123456789abcdef0123456789abcdef01"
 ROSTER = R.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "roster.json")).read())
 
 
-def risk(files, comments=(), other=("deploy/vps/dev-engine-status.sh",)):
+def risk(files, comments=(), other=("deploy/vps/dev-engine-status.sh",), gh=None):
     def api(path, *a, **k):
         p = path.split("?")[0]
         if p.endswith("/pulls/5"):
@@ -30,7 +30,7 @@ def risk(files, comments=(), other=("deploy/vps/dev-engine-status.sh",)):
             return []
         raise AssertionError(path)
     out, code = io.StringIO(), 0
-    with mock.patch.object(F, "api", api), mock.patch.object(G, "gh_json", gh_json), mock.patch.object(F, "base_roster", lambda full: ROSTER), \
+    with mock.patch.object(F, "api", api), mock.patch.object(G, "gh_json", gh or gh_json), mock.patch.object(F, "base_roster", lambda full: ROSTER), \
             mock.patch.object(F, "jev_risk", mock.Mock(side_effect=AssertionError("no model"))), contextlib.redirect_stdout(out):
         try:
             F.cmd_risk(["rerun", "5", "--no-jev"])
@@ -69,6 +69,20 @@ class TestRiskClaims(unittest.TestCase):
         self.assertFalse([l for l in lines if l.startswith("CLAIM ")], lines)
         self.assertEqual(code, 0, lines)
 
+    def test_no_shared_area_says_how_many_open_prs_or_jobs_were_checked(self):
+        code, lines = risk(["apps/engine/Dockerfile"], other=("docs/a.md",))
+        self.assertIn("CLAIMS: none, no shared area with 1 open PRs or jobs", lines)
+        self.assertEqual(code, 0, lines)
+
+    def test_risk_that_cannot_list_open_work_says_so_and_exits_1(self):
+        failures = [G.NoAnswer("x"), subprocess.TimeoutExpired("gh", 300), json.JSONDecodeError("bad", "", 0), OSError("gone")]
+        for failure in failures:
+            def gh(path, paginate=False, jq=".[]", failure=failure):
+                raise failure
+            code, lines = risk(["apps/engine/Dockerfile"], gh=gh)
+            self.assertEqual(code, 1, lines)
+            self.assertTrue(any(l.startswith("risk: cannot list open work: ") for l in lines), lines)
+            self.assertFalse([l for l in lines if l.startswith("CLAIM ")], lines)
 
 if __name__ == "__main__":
     unittest.main()
