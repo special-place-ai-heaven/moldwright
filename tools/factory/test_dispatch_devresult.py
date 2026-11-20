@@ -137,6 +137,13 @@ class DevHeals(Base):
         self.tick(2)
         self.assertEqual(self.data()["dev_result"], "red")
 
+    def test_dev_healed_requires_cancelled_workflow_on_merge_sha_to_pass_on_head(self):
+        self.later_dev("success")
+        self.merged()
+        self.w.workflows[SHA] = [wf("ci", "failure", wid=7), wf("Images", "cancelled", wid=2)]
+        self.tick(2)
+        self.assertEqual(self.data()["dev_result"], "red")
+
 
 if __name__ == "__main__":
     unittest.main()

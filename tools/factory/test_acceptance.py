@@ -1,6 +1,7 @@
-import unittest
+import json, os, tempfile, unittest
 
 import acceptance
+from store import Store
 
 
 def job(n, state, parent=None, pr=None, title=None):
@@ -91,6 +92,40 @@ class OutcomeTests(unittest.TestCase):
     def test_a_line_inside_a_code_fence_does_not_count(self):
         self.assertEqual(acceptance.outcome("```\nACCEPTED: fake\n```\n")[0], "none")
         self.assertEqual(acceptance.outcome("ACCEPTED: real\n```\nGAPS: #3\n```\n"), ("accepted", [], "ACCEPTED: real"))
+
+
+class StationTests(unittest.TestCase):
+    def test_does_not_restart_or_accept_parent_while_gaps_of_title_issue_is_open_or_child_reopens_mid_run(self):
+        tmp = tempfile.mkdtemp()
+        st = Store(os.path.join(tmp, "f.db"))
+        self.addCleanup(st.close)
+        open_issues = [{"number": 99, "title": "Gaps of #10: missing validation", "body": "Needs validation."}]
+        closed = []
+
+        def gh(args):
+            a = list(args)
+            if a[:2] == ["issue", "list"] and "--state" in a and a[a.index("--state") + 1] == "open":
+                return json.dumps(open_issues)
+            if a[:2] == ["issue", "close"]:
+                closed.append(int(a[2]))
+                return ""
+            if a[:2] == ["issue", "view"]:
+                return json.dumps({"title": "Parent", "body": "Spec", "comments": [], "state": "OPEN"})
+            return "[]"
+
+        cfg = {"repo": "o/r", "types": {"acceptor": {"coworkers": [{"id": "a1", "name": "A1", "runs": 1}]}}}
+        runs = {"r1": {"status": "done", "output": "checked\nACCEPTED: looks good"}}
+        station = acceptance.Station(cfg, st, lambda tool, a: runs["r1"], gh, lambda: 100.0, lambda *a: None)
+        self.assertEqual([i["number"] for i in station.open_children(10)], [99])
+
+        open_issues[:] = [{"number": 55, "title": "New slice", "body": "**Part of**: #10\n"}]
+        fire = st.intent("accept:10", "", "accept", coworker="A1")
+        st.fired(fire, "r1")
+        for k, v in (("state", "running"), ("agent", "a1"), ("copy", 1), ("started", 50.0), ("run", "r1"), ("fire", fire), ("sends", 1), ("name", "A1")):
+            st.set("accept:10", k, v)
+        station.poll(10, st.get_all("accept:10"))
+        self.assertEqual(closed, [])
+        self.assertEqual(st.get_all("accept:10").get("state"), "gaps")
 
 
 if __name__ == "__main__":

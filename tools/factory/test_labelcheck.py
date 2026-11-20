@@ -119,7 +119,7 @@ class Gaps(unittest.TestCase):
 
     def setUp(self):
         Fix.setUp(self)
-        self.bodies = {12: self.KEPT, 10: "**Part of**: #5\n**Repairs**: #7\n", 11: "**Part of**: #5\n**Repairs**: none\n"}
+        self.bodies = {12: self.KEPT, 10: "**Part of**: #5\n**Repairs**: #7\n", 11: "**Part of**: #5\n**Repairs**: #8\n"}
 
     def gh(self, args):
         self.calls.append(args)
@@ -178,6 +178,21 @@ class Gaps(unittest.TestCase):
         dup = {"duplicate_gaps": [{"parent": 5, "keep": 12, "older": list(range(20, 40))}]}
         first, second = self.run_twice(dup=dup)
         self.assertEqual((len(first), len(second)), (labelcheck.FIXES, labelcheck.FIXES))
+
+    def test_close_gaps_keeps_older_gap_issue_when_repairs_is_none(self):
+        dup = {"duplicate_gaps": [{"parent": 1, "keep": 11, "older": [10]}]}
+        self.bodies = {10: "**Part of**: #1\n**Repairs**: none\n", 11: "**Part of**: #1\n**Repairs**: #2\n"}
+        first, second = self.run_twice(dup=dup)
+        self.assertTrue(first[0]["did"].startswith("left open:"))
+        self.assertEqual(second, [])
+        self.assertEqual(self.s.get_all("gapclose:10").get("kept"), "1")
+        self.assertEqual(self.closes(), [])
+
+    def test_close_gaps_waits_on_recheck_classify_and_open_child_issues(self):
+        self.assertEqual(self.run_twice(d=data(kv={"recheck:10": {"state": "running"}, "classify:11": {"state": "running"}})), ([], []))
+        first = labelcheck.close_gaps(self.gh, "o/r", self.s, self.DUP, data(),
+                                      issues=[{"number": 99, "title": "slice", "body": "**Part of**: #10\n"}])
+        self.assertEqual([x["issue"] for x in first], [11])
 
 
 class Read(unittest.TestCase):
