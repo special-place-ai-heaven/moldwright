@@ -51,8 +51,16 @@ export function resolveInWorkspace(agentId: string, path: string): Promise<strin
     return resolveWithinReal(workspaceDir(agentId), path)
 }
 
-const BLOCKED = [/\brm\s+-rf\s+\/(?:\s|$)/, /\bmkfs\b/, /\b(shutdown|halt|poweroff|kexec)\b/, /\b(?:tel)?init\s+[06]\b/, /sysrq-trigger/, /\bdd\s+if=/, /:\(\)\s*\{/, /\bchown\s+-R\s+\//]
-
+const BLOCKED = [
+    /\brm\b[^\n;|&]*(?:\s-[a-zA-Z]*r|\s--recursive)[^\n;|&]*\s\/(?:data(?:\s|\/?\*?$)|\*?(?:\s|$))/,
+    /\bmkfs\b/,
+    /(?:^|[;&|]\s*|(?:sudo|systemctl)\s+)(?:\/usr\/sbin\/|\/sbin\/)?(?:shutdown|halt|poweroff|kexec)\b/,
+    /\b(?:tel)?init\s+[06]\b/,
+    /sysrq-trigger/,
+    /\bdd\b[^\n;|&]*\bof=\/dev\//,
+    /:\(\)\s*\{/,
+    /\bchown\s+-R\s+\/(?:\s|data\b|$)/,
+]
 export function assertCommandAllowed(command: string): void {
     for (const pattern of BLOCKED) {
         if (pattern.test(command)) throw new Error(`Command blocked by policy: ${command}`)

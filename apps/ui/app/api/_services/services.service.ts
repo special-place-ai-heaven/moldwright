@@ -243,12 +243,13 @@ export async function listCatalogServices(opts?: { category?: string; limit?: nu
     const limit = opts?.limit ?? BROWSE_PAGE_SIZE
     const offset = opts?.offset ?? 0
 
-    let query = supabase.from('services').select('slug, name, category, summary, icon, manifest, verified').eq('enabled', true)
-    if (opts?.category) query = query.eq('category', opts.category)
+    const filters: Parameters<typeof selectMany<'services', (typeof LITERAL_COLS)[number], typeof LITERAL_COLS>>[3] = {
+        enabled: true,
+        ...(opts?.category ? { category: opts.category } : {}),
+    }
+    const { data } = await selectMany(supabase, 'services', LITERAL_COLS, filters, [{ column: 'category', ascending: true }, { column: 'name', ascending: true }], limit, offset)
 
-    const { data } = await query.order('category', { ascending: true }).order('name', { ascending: true }).range(offset, offset + limit - 1)
-
-    return ((data ?? []) as CatalogRow[]).map(s => toSearchResult(s, new Map()))
+    return (data ?? []).map(s => toSearchResult(s, new Map()))
 }
 
 export async function getCatalogServicesBySlugs(slugs: string[]): Promise<ServiceSearchResult[]> {

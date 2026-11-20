@@ -213,6 +213,7 @@ export function browserTools(ctx: RunContext): ToolSet {
                 timeoutMs: z.number().int().positive().max(120_000).default(30_000),
             }),
             execute: async (visit: Visit) => {
+                ctx.taintedByUntrustedInput = true
                 const host = hostOf(visit.url)
                 return withHostBreaker(breaker, host ? [host] : [], async (): Promise<HostAttempt> => {
                     try {

@@ -1,6 +1,9 @@
 import 'server-only'
+import type { Database } from '@/app/api/database.types'
 import { callerRateKey } from '@/lib/auth/caller-ip'
 import { createServiceRoleClient } from '@/supabase/serviceRole'
+import { selectMany } from '@/supabase/supabase-helpers'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export const MAX_SIGN_UPS_PER_IP = 10
 const SIGN_UP_WINDOW_SECONDS = 60 * 60
@@ -35,8 +38,8 @@ const refused = (error: EmailAccountFailure) => ({ ok: false as const, error })
 
 export type EmailLookupResult = { ok: true; exists: boolean } | { ok: false; error: EmailAccountFailure }
 
-async function hasPendingInvitation(admin: ReturnType<typeof createServiceRoleClient>, email: string): Promise<boolean> {
-    const { data, error } = await admin.from('workspace_invitations').select('id').eq('email', email.toLowerCase()).eq('status', 'pending').gt('expires_at', new Date().toISOString()).limit(1)
+async function hasPendingInvitation(admin: SupabaseClient<Database>, email: string): Promise<boolean> {
+    const { data, error } = await selectMany(admin, 'workspace_invitations', ['id'] as const, { email: email.toLowerCase(), status: 'pending', expires_at: { gt: new Date().toISOString() } }, undefined, 1)
     if (error) {
         console.error('[email-sign-up] workspace_invitations lookup failed', error.message)
         return false

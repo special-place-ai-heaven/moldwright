@@ -112,6 +112,7 @@ export function webTools(ctx: RunContext, fetchTimeoutMs = FETCH_TIMEOUT_MS): To
             inputSchema: z.object({ url: publicHttpUrl, raw: z.boolean().default(false).describe('Return raw body instead of stripped text') }),
             execute: async ({ url, raw }, { abortSignal }) =>
                 withHostBreaker(breaker, hostsOfUrl(url), async (): Promise<HostAttempt> => {
+                    ctx.taintedByUntrustedInput = true
                     const runSignal = ctx.abortSignal ?? abortSignal
                     const signal = deadlineSignal(fetchTimeoutMs, runSignal)
                     let directStatus: number | null = null

@@ -37,4 +37,5 @@ export type RunContext = {
     skillProposals?: SkillProposalNotice[]
     screenshots?: ScreenshotStore
     userTurnStored?: Promise<unknown>
+    taintedByUntrustedInput?: boolean
 }

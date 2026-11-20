@@ -182,13 +182,19 @@ export async function selectMaybeSingle<T extends TableName, K extends keyof Tab
     const { data, error } = await query.maybeSingle()
     return { data: data as Pick<TableRow<T>, S[number]> | null, error }
 }
+export type OrderBySpec<T extends TableName> =
+    | { column: keyof TableRow<T>; ascending?: boolean }
+    | ReadonlyArray<{ column: keyof TableRow<T>; ascending?: boolean }>
 
-export async function selectMany<T extends TableName, K extends keyof TableRow<T>, S extends readonly K[]>(supabase: SupabaseClient<Database>, table: T, selection: S, filters: Filters<T>, orderBy?: { column: keyof TableRow<T>; ascending?: boolean }, limit?: number, offset?: number) {
+export async function selectMany<T extends TableName, K extends keyof TableRow<T>, S extends readonly K[]>(supabase: SupabaseClient<Database>, table: T, selection: S, filters: Filters<T>, orderBy?: OrderBySpec<T>, limit?: number, offset?: number) {
     let query = supabase.from(table).select(selection.join(','))
     query = applyFilters(query, filters)
 
     if (orderBy) {
-        query = query.order(orderBy.column as string, { ascending: orderBy.ascending ?? true })
+        const orders = Array.isArray(orderBy) ? orderBy : [orderBy]
+        for (const ord of orders) {
+            query = query.order(ord.column as string, { ascending: ord.ascending ?? true })
+        }
     }
 
     if (offset !== undefined) {
@@ -202,7 +208,7 @@ export async function selectMany<T extends TableName, K extends keyof TableRow<T
     return { data: data as Pick<TableRow<T>, S[number]>[] | null, error }
 }
 
-export async function selectAll<T extends TableName, K extends keyof TableRow<T>, S extends readonly K[]>(supabase: SupabaseClient<Database>, table: T, selection: S, filters: Filters<T>, orderBy?: { column: keyof TableRow<T>; ascending?: boolean }) {
+export async function selectAll<T extends TableName, K extends keyof TableRow<T>, S extends readonly K[]>(supabase: SupabaseClient<Database>, table: T, selection: S, filters: Filters<T>, orderBy?: OrderBySpec<T>) {
     const allData: Pick<TableRow<T>, S[number]>[] = []
     let offset = 0
     const limit = 1000
