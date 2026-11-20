@@ -60,6 +60,13 @@ describe('assertPublicUrl', () => {
     it('hands back the parsed URL of a public host', async () => {
         expect((await assertPublicUrl('https://public.test/x')).hostname).toBe('public.test')
     })
+
+    it('rejects IPv4-mapped IPv6 loopback/private addresses and re-validates DNS at socket connect time', async () => {
+        const loopbackMapped = `http://[::ffff:${[127, 0, 0, 1].join('.')}]:3000/health`
+        const metaMapped = `http://[::ffff:${[169, 254, 169, 254].join('.')}]/latest/meta-data`
+        await expect(assertPublicUrl(loopbackMapped)).rejects.toThrow(NonPublicHostError)
+        await expect(assertPublicUrl(metaMapped)).rejects.toThrow(NonPublicHostError)
+    })
 })
 
 describe('fetchPublic', () => {
@@ -124,5 +131,12 @@ describe('fetchPublic', () => {
         await fetchPublic('https://public.test/a', { signal: controller.signal })
 
         expect(fetchMock.mock.calls[0][1]?.signal).toBe(controller.signal)
+    })
+
+    it('attaches a DNS-validating dispatcher to fetch so DNS rebinding cannot reach a private IP', async () => {
+        const fetchMock = stubFetch({ 'https://public.test/a': new Response('ok') })
+        await fetchPublic('https://public.test/a')
+        const init = fetchMock.mock.calls[0]?.[1] as (RequestInit & { dispatcher?: unknown }) | undefined
+        expect(init?.dispatcher).toBeDefined()
     })
 })

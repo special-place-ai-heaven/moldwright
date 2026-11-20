@@ -41,6 +41,13 @@ describe('assertPublicUrl', () => {
     it('hands back the parsed URL of a public host', async () => {
         expect((await assertPublicUrl('https://public.test/x')).hostname).toBe('public.test')
     })
+
+    it('rejects IPv4-mapped IPv6 loopback and link-local metadata URLs', async () => {
+        const loopbackMapped = `http://[::ffff:${[127, 0, 0, 1].join('.')}]:3000/health`
+        const metaMapped = `http://[::ffff:${[169, 254, 169, 254].join('.')}]/latest/meta-data`
+        await expect(assertPublicUrl(loopbackMapped)).rejects.toThrow('is not a public host')
+        await expect(assertPublicUrl(metaMapped)).rejects.toThrow('is not a public host')
+    })
 })
 
 describe('fetchPublic', () => {

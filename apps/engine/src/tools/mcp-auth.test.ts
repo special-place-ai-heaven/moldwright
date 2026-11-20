@@ -7,6 +7,8 @@ process.env.RERUN_DATA_DIR = mkdtempSync(resolve(tmpdir(), 'rerun-mcp-auth-'))
 process.env.RERUN_API_KEY = ''
 process.env.RERUN_LOG_LEVEL = 'fatal'
 
+const dnsMocks = vi.hoisted(() => ({ lookup: vi.fn(async () => [{ address: [93, 184, 216, 34].join('.'), family: 4 }]) }))
+vi.mock('node:dns/promises', () => ({ lookup: dnsMocks.lookup }))
 const { afterEach, describe, expect, it, vi } = await import('vitest')
 const auth = await import('./mcp-auth.js')
 const { mcpDir, mcpPendingPath, mcpTokenPath } = await import('../config/paths.js')
@@ -37,6 +39,7 @@ function server(overrides: Partial<Server> = {}): Server {
 }
 
 afterEach(() => {
+    dnsMocks.lookup.mockImplementation(async () => [{ address: [93, 184, 216, 34].join('.'), family: 4 }])
     globalThis.fetch = originalFetch
     vi.useRealTimers()
 })
@@ -97,8 +100,20 @@ describe('startDeviceFlow', () => {
     })
 
     it('keeps the interval and lifetime the server sends', async () => {
-        mockFetch(json({ device_code: 'dc', verification_uri: 'u', interval: 2, expires_in: 60 }))
+        mockFetch(json({ device_code: 'dc', verification_uri: 'https://a.x/verify', interval: 2, expires_in: 60 }))
         expect(await auth.startDeviceFlow(endpoints)).toMatchObject({ interval: 2, expiresIn: 60 })
+    })
+
+    it('rejects loopback/private authorization_server URLs, non-https verification_uri, and sub-second poll intervals', async () => {
+        const loopbackAuth = `http://${[127, 0, 0, 1].join('.')}:8080`
+        mockFetch(json({ authorization_servers: [`${loopbackAuth}/device`] }))
+        await expect(auth.discoverDeviceAuth('https://mcp.example.com/mcp')).rejects.toThrow()
+
+        mockFetch(json({ device_code: 'dc', verification_uri: 'javascript:alert(1)', interval: 2 }))
+        await expect(auth.startDeviceFlow(endpoints)).rejects.toThrow(/verification_uri/i)
+
+        mockFetch(json({ device_code: 'dc', verification_uri: 'https://a.x/verify', interval: 0, expires_in: 60 }))
+        expect((await auth.startDeviceFlow(endpoints)).interval).toBeGreaterThanOrEqual(1)
     })
 
     it('throws on a non-OK response', async () => {

@@ -9,6 +9,7 @@ process.env.RERUN_API_KEY = 'engine-key'
 
 const npm = vi.hoisted(() => ({
     runs: [] as string[],
+    argv: [] as string[][],
     envs: [] as Array<Record<string, string> | undefined>,
     missing: false,
     fail: null as string | null,
@@ -26,6 +27,7 @@ vi.mock('node:child_process', async () => {
             const dir = args[args.indexOf('--prefix') + 1]!
             const spec = args.at(-1)!
             npm.runs.push(spec)
+            npm.argv.push(args)
             npm.envs.push(options.env)
             void (async () => {
                 await new Promise(r => setImmediate(r))
@@ -63,6 +65,7 @@ async function currentOf(): Promise<{ bin: string; installedAt: number; installI
 beforeEach(async () => {
     await rm(mcpPackagesDir(), { recursive: true, force: true })
     npm.runs.length = 0
+    npm.argv.length = 0
     npm.envs.length = 0
     npm.fail = null
     npm.missing = false
@@ -214,5 +217,10 @@ describe('withInstalledPackage', () => {
         npm.bins = 'cli.js'
         await installInBackground('mcp-tool@1.0.0')
         expect((await currentOf()).bin).toMatch(/\.bin\/mcp-tool$/)
+    })
+
+    it('passes --ignore-scripts to npm install when caching npx MCP packages', async () => {
+        await installInBackground('mcp-tool@1.0.0')
+        expect(npm.argv[0]).toContain('--ignore-scripts')
     })
 })

@@ -13,7 +13,7 @@ const { describe, expect, it, beforeAll } = await import('vitest')
 const { filesystemTools } = await import('./filesystem.js')
 const { workspaceDir } = await import('../../config/paths.js')
 
-const ctxFor = (id: string, shell: boolean) => ({ agent: { id, config: { tools: { shell } } } }) as any
+const ctxFor = (id: string, shell: boolean, jobRef?: string) => ({ agent: { id, config: { tools: { shell } } }, ...(jobRef ? { lineage: { jobRef } } : {}) }) as unknown as Parameters<typeof filesystemTools>[0]
 const withShell = filesystemTools(ctxFor('builder', true))
 const withoutShell = filesystemTools(ctxFor('writer', false))
 const job = resolve(jobs, 'repo', 'job-1')
@@ -59,6 +59,18 @@ describe('fs tools with extra roots for a coworker with the shell on', () => {
 
     it('tells the model the job folders are allowed', () => {
         expect((withShell.fs_write as any).description).toContain(jobs)
+    })
+
+    it('scopes extra roots to the assigned job worktree when jobRef lineage is present', async () => {
+        const job2 = resolve(jobs, 'repo', '200-other')
+        const job1 = resolve(jobs, 'repo', '100-mine')
+        await mkdir(job1, { recursive: true })
+        await mkdir(job2, { recursive: true })
+        await writeFile(resolve(job1, 'ok.txt'), 'mine', 'utf8')
+        await writeFile(resolve(job2, 'sibling.txt'), 'theirs', 'utf8')
+        const scoped = filesystemTools(ctxFor('builder', true, 'repo#100'))
+        expect(await run(scoped, 'fs_read', { path: resolve(job1, 'ok.txt') })).toBe('mine')
+        await expect(run(scoped, 'fs_read', { path: resolve(job2, 'sibling.txt') })).rejects.toThrow('escapes the root')
     })
 })
 

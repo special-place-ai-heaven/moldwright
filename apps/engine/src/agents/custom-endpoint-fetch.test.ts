@@ -44,4 +44,11 @@ describe('customEndpointFetch', () => {
         const init = (inner.mock.calls[0] as unknown as [string, RequestInit & { dispatcher?: unknown }])[1]
         expect(init.dispatcher).toBeDefined()
     })
+
+    it('caps oversized 402 response bodies rather than buffering unbounded text', async () => {
+        const huge = 'x'.repeat(200_000)
+        const res = await customEndpointFetch(answering(402, huge) as unknown as typeof fetch)('https://api.x.ai/v1/chat/completions')
+        const payload = (await res.json()) as { error: { message: string } }
+        expect(payload.error.message.length).toBeLessThanOrEqual(600)
+    })
 })

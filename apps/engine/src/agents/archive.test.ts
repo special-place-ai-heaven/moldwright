@@ -232,6 +232,12 @@ describe('planArchive', () => {
         const plan = await planArchive(AGENT_ID, ['workspace/leaked.md'])
         expect(plan.files.some(f => f.path === 'workspace/leaked.md')).toBe(false)
     })
+
+    it('notes unscanned binary database and oversized files in planArchive', async () => {
+        const plan = await planArchive(AGENT_ID)
+        const dbEntry = plan.files.find(f => f.path === 'data/agent.db')
+        expect(dbEntry?.note).toMatch(/not scanned/i)
+    })
 })
 
 describe('buildArchive', () => {

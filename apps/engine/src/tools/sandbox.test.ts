@@ -70,8 +70,8 @@ describe('resolveWithinReal', () => {
         await expect(resolveWithinReal(real, 'loop-a')).rejects.toThrow()
     })
 
-    it('returns the textual path for a link to a file inside the root', async () => {
-        expect(await resolveWithinReal(real, 'link-in')).toBe(resolve(real, 'link-in'))
+    it('returns the resolved target path for a link to a file inside the root', async () => {
+        expect(await resolveWithinReal(real, 'link-in')).toBe(resolve(real, 'inside/file.txt'))
     })
 
     it('accepts a plain path, existing or not', async () => {
@@ -92,8 +92,8 @@ describe('resolveWithinReal', () => {
     })
 
     it('works when the root itself is a link', async () => {
-        expect(await resolveWithinReal(rootlink, 'inside/file.txt')).toBe(resolve(rootlink, 'inside/file.txt'))
-        expect(await resolveWithinReal(rootlink, 'link-in')).toBe(resolve(rootlink, 'link-in'))
+        expect(await resolveWithinReal(rootlink, 'inside/file.txt')).toBe(resolve(real, 'inside/file.txt'))
+        expect(await resolveWithinReal(rootlink, 'link-in')).toBe(resolve(real, 'inside/file.txt'))
         await expect(resolveWithinReal(rootlink, 'link-out/secret.txt')).rejects.toThrow('Path escapes the root: link-out/secret.txt')
     })
 

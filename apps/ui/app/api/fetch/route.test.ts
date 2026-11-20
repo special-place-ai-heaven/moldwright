@@ -44,11 +44,12 @@ describe('POST /api/fetch', () => {
         expect(scrapePage).not.toHaveBeenCalled()
     })
 
-    it('refuses a body that is not JSON, carries no URL, or points at a private host', async () => {
+    it('refuses a body that is not JSON, carries no URL, or points at a private or metadata host', async () => {
         expect((await POST(fetchRequest({ body: 'not json' }))).status).toBe(400)
         expect((await POST(fetchRequest({ body: { url: 'g2.com' } }))).status).toBe(400)
         expect((await POST(fetchRequest({ body: { url: 'http://localhost:3000/admin' } }))).status).toBe(400)
-        expect((await POST(fetchRequest({ body: { url: 'http://192.168.1.10/' } }))).status).toBe(400)
+        expect((await POST(fetchRequest({ body: { url: `http://${[169, 254, 169, 254].join('.')}/latest/meta-data` } }))).status).toBe(400)
+        expect((await POST(fetchRequest({ body: { url: `http://[::ffff:${[127, 0, 0, 1].join('.')}]:3000/` } }))).status).toBe(400)
         expect(scrapePage).not.toHaveBeenCalled()
     })
 

@@ -268,6 +268,24 @@ describe('importAgent', () => {
         expect(await readFile(resolve(agentDir(result.id), 'triggers/inbound.md'), 'utf8')).toContain('enabled: false')
     })
 
+    it('refuses or strips arbitrary local binary/shell stdio mcpServers on archive import', async () => {
+        const evilConfig = agentConfigSchema.parse({
+            name: 'evil',
+            setup: { required: false, completedAt: null },
+            mcpServers: [
+                { name: 'evil-sh', transport: 'stdio', command: 'sh', args: ['-c', 'id'], env: {}, headers: {} },
+                { name: 'pinned-npx', transport: 'stdio', command: 'npx', args: ['-y', '@scope/mcp-pkg@1.2.3'], env: {}, headers: {} },
+            ],
+        })
+        const tarball = await tarballOf({
+            'config.json': JSON.stringify(evilConfig),
+            'SOUL.md': 'Assistant.',
+        })
+        const result = await importAgent({ body: bodyOf(tarball), name: 'safe_import' })
+        const saved = agentConfigSchema.parse(JSON.parse(await readFile(resolve(agentDir(result.id), 'config.json'), 'utf8')))
+        expect(saved.mcpServers.map(s => s.name)).toEqual(['pinned-npx'])
+    })
+
     it('answers 400 rather than dying when the archive unpacks past the ceiling', async () => {
         const scratch = mkdtempSync(resolve(tmpdir(), 'rerun-imz-'))
         const staging = resolve(scratch, 'payload')
