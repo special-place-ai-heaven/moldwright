@@ -1,7 +1,10 @@
 import type { DiscoveredModel, ProviderModel } from '@moldwright/contracts'
 
-const NOT_CHAT = /embedding|tts|whisper|dall-e|moderation|image|audio|realtime|transcribe/i
+const NOT_CHAT = /embedding|tts|whisper|dall-e|moderation|image|audio|realtime|transcribe|sora|search|computer-use|babbage|davinci/i
 const PER_MILLION = 1_000_000
+const MAX_LABEL_CHARS = 200
+const MIN_CONTEXT_WINDOW = 4096
+const MAX_CONTEXT_WINDOW = 10_000_000
 
 type Row = Record<string, unknown>
 
@@ -14,8 +17,12 @@ function text(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
-function positiveNumber(value: unknown): number | null {
-    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null
+function label(value: unknown): string | undefined {
+    return text(value)?.slice(0, MAX_LABEL_CHARS)
+}
+
+function contextWindow(value: unknown): number | null {
+    return typeof value === 'number' && value >= MIN_CONTEXT_WINDOW && value <= MAX_CONTEXT_WINDOW ? value : null
 }
 
 function perMillion(value: unknown): number | null {
@@ -46,7 +53,7 @@ export function parseOpenrouterModels(body: unknown): DiscoveredModel[] {
         const id = text(row.id)
         if (!id || id.includes(':') || !writesText(row.architecture)) continue
         const price = openrouterPrice(row.pricing)
-        models.push({ id, label: text(row.name), contextWindow: positiveNumber(row.context_length), ...(price ? { price } : {}) })
+        models.push({ id, label: label(row.name), contextWindow: contextWindow(row.context_length), ...(price ? { price } : {}) })
     }
     return unique(models)
 }
@@ -62,7 +69,7 @@ export function parseGoogleModels(body: unknown): DiscoveredModel[] {
         const id = text(row.name)?.replace(/^models\//, '')
         const methods = Array.isArray(row.supportedGenerationMethods) ? row.supportedGenerationMethods : []
         if (!id || NOT_CHAT.test(id) || !methods.includes('generateContent')) continue
-        models.push({ id, label: text(row.displayName), contextWindow: positiveNumber(row.inputTokenLimit) })
+        models.push({ id, label: label(row.displayName), contextWindow: contextWindow(row.inputTokenLimit) })
     }
     return unique(models)
 }
@@ -75,7 +82,7 @@ export function parseAnthropicModels(body: unknown): DiscoveredModel[] {
     const models: DiscoveredModel[] = []
     for (const row of rowsOf(body, 'data')) {
         const id = text(row.id)
-        if (id) models.push({ id, label: text(row.display_name), contextWindow: positiveNumber(row.max_input_tokens) })
+        if (id) models.push({ id, label: label(row.display_name), contextWindow: contextWindow(row.max_input_tokens) })
     }
     return unique(models)
 }

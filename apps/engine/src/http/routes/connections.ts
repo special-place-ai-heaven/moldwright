@@ -61,7 +61,7 @@ connectionRoutes.post('/probe', async c => {
 connectionRoutes.post('/', async c => {
     const body = createConnectionSchema.parse(await c.req.json())
     const connection = await createConnection(body)
-    await readCliModelsBeforeAdopting(connection)
+    await Promise.all([readCliModelsBeforeAdopting(connection), refreshProviderCatalog(connection)])
     await adoptBoxDefault(connection)
     announceConnected(connection)
     return c.json(toSummary(connection), 201)
@@ -84,6 +84,7 @@ connectionRoutes.patch('/:id/keys', async c => {
     const body = updateConnectionKeysSchema.parse(await c.req.json())
     const keys = await updateConnectionKeys(id, body)
     const connection = await getConnection(id)
+    void refreshProviderCatalog(connection)
     await readCliModelsBeforeAdopting(connection)
     await adoptBoxDefault(connection)
     announceConnected(connection)
@@ -109,7 +110,6 @@ async function readCliModelsBeforeAdopting(connection: LoadedConnection): Promis
     if (connection.config.provider === 'codex') await refreshCodexPlanLimits(connection)
     if (connection.config.provider === 'opencode') await Promise.all([refreshOpencodeCatalog(), refreshOpencodePlanLimits(connection)])
     if (connection.config.provider === 'custom') await refreshCustomCatalog(connection)
-    await refreshProviderCatalog(connection)
 }
 
 async function adoptBoxDefault(connection: LoadedConnection): Promise<void> {

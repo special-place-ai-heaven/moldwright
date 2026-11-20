@@ -14,6 +14,14 @@ describe('parseOpenrouterModels', () => {
         ])
     })
 
+    it('cuts a long name and drops a window too small or too large to be real', () => {
+        const [row] = parseOpenrouterModels({ data: [{ id: 'a/long', name: 'n'.repeat(500), context_length: 4095 }, { id: 'a/huge', context_length: 10_000_001 }, { id: 'a/edge', context_length: 4096 }] })
+        expect(row.label).toHaveLength(200)
+        expect(row.contextWindow).toBeNull()
+        expect(parseOpenrouterModels({ data: [{ id: 'a/huge', context_length: 10_000_001 }] })[0].contextWindow).toBeNull()
+        expect(parseOpenrouterModels({ data: [{ id: 'a/edge', context_length: 4096 }] })[0].contextWindow).toBe(4096)
+    })
+
     it('reads nothing from a body that is not a model list', () => {
         expect(parseOpenrouterModels('garbage')).toEqual([])
         expect(parseOpenrouterModels({ data: 'nope' })).toEqual([])

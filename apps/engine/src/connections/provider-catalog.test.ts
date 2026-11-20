@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { connectionConfigSchema, type Provider } from '@moldwright/contracts'
-import { providerDiscoveredModels, refreshProviderCatalog, refreshStaleProviderCatalogs, resetProviderCatalogForTests } from './provider-catalog.js'
+import { forgetProviderCatalog, providerDiscoveredModels, refreshProviderCatalog, refreshStaleProviderCatalogs, resetProviderCatalogForTests } from './provider-catalog.js'
 import { toSummary } from './loader.js'
 import { servesModel } from './resolve.js'
 import { allowedModel } from './plan.js'
@@ -31,8 +31,13 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
 })
+
+function hanging(signal: AbortSignal | null | undefined): Promise<Response> {
+    return new Promise((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal.reason)))
+}
 
 describe('the live model list of a key connection', () => {
     it('reads OpenRouter from the connection base URL and lists it in the summary', async () => {
@@ -114,12 +119,95 @@ describe('the live model list of a key connection', () => {
         expect(seen).toHaveLength(0)
     })
 
-    it('rereads only once the last attempt is stale', async () => {
+    it('rereads a good list once 30 minutes have passed', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
         answer = () => ok(fixture('openai'))
         const cnx = connection('openai', { OPENAI_API_KEY: 'sk-openai' })
         await refreshProviderCatalog(cnx)
+        vi.setSystemTime(Date.now() + 29 * 60_000)
         refreshStaleProviderCatalogs([cnx])
         expect(seen).toHaveLength(1)
+        vi.setSystemTime(Date.now() + 2 * 60_000)
+        refreshStaleProviderCatalogs([cnx])
+        expect(seen).toHaveLength(2)
+    })
+
+    it('retries a failed read after 2 minutes', async () => {
+        vi.useFakeTimers({ toFake: ['Date'] })
+        answer = () => new Response('{}', { status: 503 })
+        const cnx = connection('openai', { OPENAI_API_KEY: 'sk-openai' })
+        await refreshProviderCatalog(cnx)
+        vi.setSystemTime(Date.now() + 60_000)
+        refreshStaleProviderCatalogs([cnx])
+        expect(seen).toHaveLength(1)
+        vi.setSystemTime(Date.now() + 61_000)
+        refreshStaleProviderCatalogs([cnx])
+        expect(seen).toHaveLength(2)
+    })
+
+    it('drops the answer of a read that was running when the connection was forgotten, and reads afresh', async () => {
+        let finish: (response: Response) => void = () => {}
+        vi.mocked(globalThis.fetch).mockImplementationOnce(async (input, init) => {
+            seen.push({ url: String(input), headers: Object.fromEntries(new Headers(init?.headers).entries()) })
+            return new Promise<Response>(resolve => (finish = resolve))
+        })
+        const cnx = connection('openai', { OPENAI_API_KEY: 'sk-old' })
+        const slow = refreshProviderCatalog(cnx)
+        await vi.waitFor(() => expect(seen).toHaveLength(1))
+        forgetProviderCatalog(cnx.id)
+        finish(ok(fixture('openai')))
+        await slow
+        expect(providerDiscoveredModels(cnx.id)).toBeNull()
+
+        answer = () => ok(JSON.stringify({ data: [{ id: 'gpt-fresh' }] }))
+        await refreshProviderCatalog({ ...cnx, env: { OPENAI_API_KEY: 'sk-new' } })
+        expect(seen[1].headers.authorization).toBe('Bearer sk-new')
+        expect(providerDiscoveredModels(cnx.id)?.map(model => model.id)).toEqual(['gpt-fresh'])
+    })
+
+    it('gives up on a listing that hangs once its single deadline passes', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        vi.mocked(globalThis.fetch).mockImplementation(async (_input, init) => hanging(init?.signal))
+        const cnx = connection('anthropic', { ANTHROPIC_API_KEY: 'sk-ant' })
+        let settled = false
+        const attempt = refreshProviderCatalog(cnx).then(() => (settled = true))
+        await vi.advanceTimersByTimeAsync(14_999)
+        expect(settled).toBe(false)
+        await vi.advanceTimersByTimeAsync(1)
+        await vi.waitFor(() => expect(settled).toBe(true), { timeout: 500 })
+        await attempt
+        expect(providerDiscoveredModels(cnx.id)).toBeNull()
+    })
+
+    it('shares that deadline across pages', async () => {
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+        let calls = 0
+        vi.mocked(globalThis.fetch).mockImplementation(async (_input, init) => {
+            calls += 1
+            if (calls === 1) {
+                await new Promise(resolve => setTimeout(resolve, 10_000))
+                return ok(fixture('anthropic-page1'))
+            }
+            return hanging(init?.signal)
+        })
+        const cnx = connection('anthropic', { ANTHROPIC_API_KEY: 'sk-ant' })
+        let settled = false
+        const attempt = refreshProviderCatalog(cnx).then(() => (settled = true))
+        await vi.advanceTimersByTimeAsync(15_000)
+        await vi.waitFor(() => expect(settled).toBe(true), { timeout: 500 })
+        await attempt
+        expect(calls).toBe(2)
+        expect(providerDiscoveredModels(cnx.id)).toBeNull()
+    })
+
+    it('keeps at most 2000 models and each id once across pages', async () => {
+        const page = (from: number, more: boolean) => ok(JSON.stringify({ data: Array.from({ length: 1500 }, (_, i) => ({ id: `m-${from + i}` })), has_more: more, last_id: `m-${from + 1499}` }))
+        answer = url => (url.searchParams.get('after_id') ? page(1000, false) : page(0, true))
+        const cnx = connection('anthropic', { ANTHROPIC_API_KEY: 'sk-ant' })
+        await refreshProviderCatalog(cnx)
+        const ids = providerDiscoveredModels(cnx.id)?.map(model => model.id) ?? []
+        expect(ids).toHaveLength(2000)
+        expect(new Set(ids).size).toBe(2000)
     })
 })
 

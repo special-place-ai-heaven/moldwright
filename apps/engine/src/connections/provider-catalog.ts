@@ -4,8 +4,10 @@ import { trimBaseUrl } from './custom-catalog.js'
 import { anthropicNextPage, googleNextPage, parseAnthropicModels, parseGoogleModels, parseOpenaiModels, parseOpenrouterModels } from './provider-model-lists.js'
 import type { LoadedConnection } from './types.js'
 
-const FETCH_TIMEOUT_MS = 10_000
+const LISTING_DEADLINE_MS = 15_000
 const STALE_AFTER_MS = 30 * 60_000
+const RETRY_AFTER_MS = 2 * 60_000
+const MAX_MODELS = 2000
 const MAX_BODY_BYTES = 8 * 1024 * 1024
 const MAX_PAGES = 20
 const OPENROUTER_DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1'
@@ -55,8 +57,9 @@ const LISTERS: Partial<Record<Provider, Lister>> = {
 
 type Reading = { models: DiscoveredModel[]; at: number }
 const readings = new Map<string, Reading>()
-const attemptedAt = new Map<string, number>()
+const nextReadAt = new Map<string, number>()
 const inFlight = new Map<string, Promise<void>>()
+const generations = new Map<string, number>()
 
 function keyOf(connection: LoadedConnection): string | undefined {
     const { env, config } = connection
@@ -81,8 +84,8 @@ async function readCapped(response: Response): Promise<unknown> {
     return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
-async function readPage(page: Page): Promise<unknown> {
-    const response = await fetch(page.url, { headers: page.headers, redirect: 'error', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+async function readPage(page: Page, signal: AbortSignal): Promise<unknown> {
+    const response = await fetch(page.url, { headers: page.headers, redirect: 'error', signal })
     if (!response.ok) {
         await response.body?.cancel()
         throw new Error(`model list answered ${response.status}`)
@@ -90,15 +93,30 @@ async function readPage(page: Page): Promise<unknown> {
     return readCapped(response)
 }
 
-async function listModels(lister: Lister, connection: LoadedConnection, key: string): Promise<DiscoveredModel[]> {
+async function listPages(lister: Lister, connection: LoadedConnection, key: string, signal: AbortSignal): Promise<DiscoveredModel[]> {
     const models: DiscoveredModel[] = []
+    const seen = new Set<string>()
     let page: Page | null = lister.first(connection, key)
-    for (let read = 0; page && read < MAX_PAGES; read++) {
-        const body = await readPage(page)
-        models.push(...lister.parse(body).filter(model => !models.some(seen => seen.id === model.id)))
+    for (let read = 0; page && read < MAX_PAGES && models.length < MAX_MODELS; read++) {
+        const body = await readPage(page, signal)
+        for (const model of lister.parse(body)) {
+            if (models.length >= MAX_MODELS || seen.has(model.id)) continue
+            seen.add(model.id)
+            models.push(model)
+        }
         page = lister.next(body, page)
     }
     return models
+}
+
+async function listModels(lister: Lister, connection: LoadedConnection, key: string): Promise<DiscoveredModel[]> {
+    const deadline = new AbortController()
+    const timer = setTimeout(() => deadline.abort(new Error('model list timed out')), LISTING_DEADLINE_MS)
+    try {
+        return await listPages(lister, connection, key, deadline.signal)
+    } finally {
+        clearTimeout(timer)
+    }
 }
 
 export function listsProviderModels(provider: Provider): boolean {
@@ -111,15 +129,21 @@ export function refreshProviderCatalog(connection: LoadedConnection): Promise<vo
     const lister = LISTERS[connection.config.provider]
     const key = keyOf(connection)
     if (!lister || !key) return Promise.resolve()
-    attemptedAt.set(connection.id, Date.now())
+    const generation = generations.get(connection.id) ?? 0
+    const current = () => (generations.get(connection.id) ?? 0) === generation
+    nextReadAt.set(connection.id, Date.now() + RETRY_AFTER_MS)
     const stale = { connection: connection.id, provider: connection.config.provider, stale: readings.has(connection.id) }
-    const attempt = listModels(lister, connection, key)
+    const attempt: Promise<void> = listModels(lister, connection, key)
         .then(models => {
-            if (models.length) readings.set(connection.id, { models, at: Date.now() })
-            else logger.warn(stale, 'provider model list was empty, keeping the previous list')
+            if (!current()) return
+            if (!models.length) return logger.warn(stale, 'provider model list was empty, keeping the previous list')
+            readings.set(connection.id, { models, at: Date.now() })
+            nextReadAt.set(connection.id, Date.now() + STALE_AFTER_MS)
         })
         .catch(err => logger.warn({ ...stale, err: err instanceof Error ? err.message : String(err) }, 'provider model list failed, keeping the previous list'))
-        .finally(() => inFlight.delete(connection.id))
+        .finally(() => {
+            if (inFlight.get(connection.id) === attempt) inFlight.delete(connection.id)
+        })
     inFlight.set(connection.id, attempt)
     return attempt
 }
@@ -127,7 +151,7 @@ export function refreshProviderCatalog(connection: LoadedConnection): Promise<vo
 export function refreshStaleProviderCatalogs(connections: LoadedConnection[]): void {
     for (const connection of connections) {
         if (!listsProviderModels(connection.config.provider)) continue
-        if (Date.now() - (attemptedAt.get(connection.id) ?? 0) < STALE_AFTER_MS) continue
+        if (Date.now() < (nextReadAt.get(connection.id) ?? 0)) continue
         void refreshProviderCatalog(connection)
     }
 }
@@ -141,12 +165,15 @@ export function providerContextWindow(connection: LoadedConnection | null | unde
 }
 
 export function forgetProviderCatalog(connectionId: string): void {
+    generations.set(connectionId, (generations.get(connectionId) ?? 0) + 1)
+    inFlight.delete(connectionId)
     readings.delete(connectionId)
-    attemptedAt.delete(connectionId)
+    nextReadAt.delete(connectionId)
 }
 
 export function resetProviderCatalogForTests(): void {
     readings.clear()
-    attemptedAt.clear()
+    nextReadAt.clear()
     inFlight.clear()
+    generations.clear()
 }
