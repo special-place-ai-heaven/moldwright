@@ -272,6 +272,19 @@ agentRoutes.patch('/:id/keys', async c => {
     const id = c.req.param('id')
     if (!agentExists(id)) return c.json({ error: 'agent not found' }, 404)
     const { set, remove } = updateAgentKeysSchema.parse(await c.req.json())
+    const DANGEROUS_ENV_KEYS: Record<string, true> = {
+        LD_PRELOAD: true,
+        LD_LIBRARY_PATH: true,
+        DYLD_INSERT_LIBRARIES: true,
+        NODE_OPTIONS: true,
+        GIT_SSH_COMMAND: true,
+        GIT_EXEC_PATH: true,
+        BASH_ENV: true,
+        ENV: true,
+    }
+    for (const key of Object.keys(set)) {
+        if (DANGEROUS_ENV_KEYS[key.toUpperCase()]) return c.json({ error: `Environment variable ${key} cannot be set on a coworker` }, 400)
+    }
     const keys = await withAgentLock(id, async () => {
         const next = await readAgentEnv(id)
         for (const key of remove) delete next[key]

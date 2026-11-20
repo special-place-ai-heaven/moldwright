@@ -4,7 +4,8 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js'
 import type { LoadedAgent, McpServer } from '../agents/types.js'
-import { agentProcessEnv } from '../agents/process-env.js'
+import { mkdirSync } from 'node:fs'
+import { workspaceDir } from '../config/paths.js'
 import { childProcessEnv } from '../lib/child-env.js'
 import { logger } from '../lib/logger.js'
 import { isAuthError } from './mcp-auth.js'
@@ -147,8 +148,9 @@ export async function acquireMcp(agentId: string, server: McpServer, spawn: McpS
 }
 
 export function agentMcpSpawn(agent: Pick<LoadedAgent, 'id' | 'env' | 'config'>): McpSpawn {
-    const { cwd, env } = agentProcessEnv(agent)
-    return { cwd, env: childProcessEnv(env) }
+    const cwd = workspaceDir(agent.id)
+    mkdirSync(cwd, { recursive: true })
+    return { cwd, env: childProcessEnv({}) }
 }
 
 export async function pooledMcpServers(agent: LoadedAgent): Promise<PooledMcp[]> {

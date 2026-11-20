@@ -1,4 +1,5 @@
-import { mkdir, rm, writeFile, rename } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
+import { writeFileAtomic } from '../lib/atomic-write.js'
 import {
     PROVIDER_LABELS,
     RERUN_CONNECTION_ID,
@@ -27,14 +28,20 @@ import { getConnection, reloadConnection, unloadConnection } from './registry.js
 import type { LoadedConnection } from './types.js'
 
 async function writeConfig(id: string, config: ConnectionConfig): Promise<void> {
-    const target = connectionConfigPath(id)
-    const tmp = `${target}.tmp`
-    await writeFile(tmp, `${JSON.stringify(config, null, 4)}\n`, 'utf8')
-    await rename(tmp, target)
+    await writeFileAtomic(connectionConfigPath(id), `${JSON.stringify(config, null, 4)}\n`, { mode: 0o600 })
 }
 
 function assertCustomHasBaseUrl(config: ConnectionConfig): void {
     if (config.provider === 'custom' && !config.baseUrl) throw badRequest('A custom connection needs a base URL')
+    if (config.baseUrl) {
+        let parsed: URL
+        try {
+            parsed = new URL(config.baseUrl)
+        } catch {
+            throw badRequest('Invalid base URL')
+        }
+        if (parsed.username || parsed.password) throw badRequest('Base URL cannot embed credentials; store keys in the connection instead')
+    }
 }
 
 export async function createConnection(input: CreateConnectionInput, id = newId()): Promise<LoadedConnection> {

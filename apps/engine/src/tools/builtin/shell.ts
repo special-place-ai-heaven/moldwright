@@ -4,7 +4,7 @@ import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
 import { assertCommandAllowed } from '../sandbox.js'
 import { agentProcessEnv } from '../../agents/process-env.js'
-import { readSharedEnvSync, secretValuesOf } from '../../agents/shared-env.js'
+import { agentSecretValues } from '../../agents/shared-env.js'
 import { sessionLabels } from '../../agents/session-labels.js'
 import { childProcessEnv } from '../../lib/child-env.js'
 import { HostBreaker, hostsOf, httpFailureInOutput, withHostBreaker, type HostAttempt } from '../host-breaker.js'
@@ -45,7 +45,7 @@ export function shellTools(ctx: RunContext, run: ShellRunner = execAsync): ToolS
             execute: async ({ command, timeoutMs }) => {
                 assertCommandAllowed(command)
                 return withHostBreaker(breaker, hostsOf(command), async (): Promise<HostAttempt> => {
-                    const secrets = secretValuesOf({ ...readSharedEnvSync(), ...ctx.agent.env })
+                    const secrets = agentSecretValues(ctx.agent)
                     try {
                         const { stdout, stderr } = await run(command, { cwd, env, timeout: timeoutMs, maxBuffer: 10_000_000, signal: ctx.abortSignal })
                         const text = redactSecrets(`${stdout}${stderr ? `\n[stderr]\n${stderr}` : ''}`, secrets).slice(0, 50_000) || '(no output)'

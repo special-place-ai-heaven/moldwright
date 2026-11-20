@@ -58,7 +58,7 @@ import { authorMetadata, sendNotification, type NotificationKind } from './notif
 import { emitRunTerminal } from './run-events.js'
 import { ClaudeSignInRenewedError, classifyFinishReason, classifyProviderError, errorMessageOf, isFailedFinish, openAiCreditsError, ProviderRefusedError, ProviderStreamCutError, RUN_ERROR_CODES, refusalReason, unreachableEndpointError, type RunErrorCode } from './provider-errors.js'
 import { createLiveCounter, type LiveCounter } from './live-counter.js'
-import { readSharedEnvSync, secretValuesOf } from '../agents/shared-env.js'
+import { agentSecretValues } from '../agents/shared-env.js'
 
 export type RunOutcome = { kind: 'done' | 'error' | 'cancelled'; error?: string; errorCode?: RunErrorCode | null }
 
@@ -68,6 +68,7 @@ export type AgentRun = {
     settled: Promise<RunOutcome>
     contextUsage?: () => ContextOccupancy | undefined
     quickReplies?: () => QuickRepliesCapture | undefined
+    secrets?: string[]
 }
 
 export type { RunTrigger }
@@ -181,8 +182,15 @@ function redactSecrets(text: string, secrets: string[]): string {
     return secrets.reduce((out, secret) => out.split(secret).join('[redacted]'), text)
 }
 
-function runSecrets(agent: LoadedAgent): string[] {
-    return [...Object.values(agent.env), ...Object.values(agent.resolved.connection?.env ?? {}), ...secretValuesOf(readSharedEnvSync())].filter(value => value.length >= 8)
+
+function redactValue<T>(value: T, secrets: string[]): T {
+    if (secrets.length === 0 || value === null || value === undefined) return value
+    if (typeof value === 'string') return redactSecrets(value, secrets) as T
+    if (Array.isArray(value)) return value.map(item => redactValue(item, secrets)) as T
+    if (typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, redactValue(v, secrets)])) as T
+    }
+    return value
 }
 
 async function recordStepTelemetry(agentId: string, sessionId: string, runId: string, provider: string, model: string, stepNumber: number, durationMs: number, step: StepLike, costMicros: number | null, effort: string | null, secrets: string[], liveCalls: Map<string, string>): Promise<void> {
@@ -213,7 +221,7 @@ async function recordStepTelemetry(agentId: string, sessionId: string, runId: st
     for (const call of calls) {
         const result = results.find(r => r.toolCallId === call.toolCallId)
         const failure = result ? undefined : step.content?.find(part => part.type === 'tool-error' && part.toolCallId === call.toolCallId)
-        const resultJson = result ? safeJson(result.output) : safeJson(failure ? toolErrorText(failure.error, secrets) : NO_TOOL_RESULT)
+        const resultJson = result ? redactSecrets(safeJson(result.output) ?? '', secrets) || null : safeJson(failure ? toolErrorText(failure.error, secrets) : NO_TOOL_RESULT)
         const isError = result ? 0 : 1
         const liveId = call.toolCallId ? liveCalls.get(call.toolCallId) : undefined
         if (liveId) {
@@ -228,7 +236,7 @@ async function recordStepTelemetry(agentId: string, sessionId: string, runId: st
             stepNumber,
             toolCallId: call.toolCallId ?? null,
             toolName: call.toolName,
-            inputJson: safeJson(call.input),
+            inputJson: redactValue(safeJson(call.input), secrets),
             resultJson,
             isError,
             durationMs: null,
@@ -239,15 +247,15 @@ async function recordStepTelemetry(agentId: string, sessionId: string, runId: st
 
 type LiveToolChunk = { type: 'tool-call' | 'tool-result'; toolCallId: string; toolName: string; input?: unknown; output?: unknown }
 
-async function recordLiveToolCall(agentId: string, sessionId: string, runId: string, stepNumber: number, chunk: LiveToolChunk, liveCalls: Map<string, string>): Promise<void> {
+async function recordLiveToolCall(agentId: string, sessionId: string, runId: string, stepNumber: number, chunk: LiveToolChunk, liveCalls: Map<string, string>, secrets: string[]): Promise<void> {
     const known = liveCalls.get(chunk.toolCallId)
     if (chunk.type === 'tool-result') {
-        if (known) await updateToolCall(agentId, known, { resultJson: safeJson(chunk.output), isError: 0 })
+        if (known) await updateToolCall(agentId, known, { resultJson: redactValue(safeJson(chunk.output), secrets), isError: 0 })
         return
     }
     if (known) return
     const id = newId()
-    await insertToolCall(agentId, { id, runId, agentId, sessionId, stepNumber, toolCallId: chunk.toolCallId, toolName: chunk.toolName, inputJson: safeJson(chunk.input), resultJson: null, isError: 0, durationMs: null, createdAt: nowIso() })
+    await insertToolCall(agentId, { id, runId, agentId, sessionId, stepNumber, toolCallId: chunk.toolCallId, toolName: chunk.toolName, inputJson: redactValue(safeJson(chunk.input), secrets), resultJson: null, isError: 0, durationMs: null, createdAt: nowIso() })
     liveCalls.set(chunk.toolCallId, id)
 }
 
@@ -331,7 +339,8 @@ async function runTurn(baseAgent: LoadedAgent, sessionId: string, userText: stri
         let costMicros: number | null = null
 
         if (settlement.kind === 'done') {
-            const messages = canonicalizeHitlNames(settlement.messages)
+            const secrets = agentSecretValues(agent)
+            const messages = redactValue(canonicalizeHitlNames(settlement.messages), secrets)
             let answerRow: MessageRow | undefined
             for (const message of messages) {
                 const row = await appendMessage(agent.id, sessionId, message).catch(() => undefined)
@@ -351,7 +360,7 @@ async function runTurn(baseAgent: LoadedAgent, sessionId: string, userText: stri
             }
             await finishRun(agent.id, run.id, plusDelegated(settlement.usage, delegated), stepsToWrite(), settlement.costMicros, contextUsage?.(), goalChecked).catch(() => {})
             await touchSession(agent.id, sessionId).catch(() => {})
-            text = settlement.text
+            text = redactSecrets(settlement.text, secrets)
             usage = settlement.usage
             costMicros = settlement.costMicros
             if (connection) {
@@ -373,7 +382,8 @@ async function runTurn(baseAgent: LoadedAgent, sessionId: string, userText: stri
             const outOfCredits = settlement.errorCode === RUN_ERROR_CODES.usageLimit ? openAiCreditsError(provider, settlement.error) : null
             if (outOfCredits) settlement = { ...settlement, error: outOfCredits }
             const errorCode = settlement.errorCode ?? null
-            const errorMessage = errorMessageOf(settlement.error)
+            const secrets = agentSecretValues(agent)
+            const errorMessage = redactSecrets(errorMessageOf(settlement.error), secrets)
             forgetCodexThread(agent.id, sessionId)
             logger.error({ err: errorMessage, errorCode, agent: agent.id, run: run.id }, 'run error')
             if (errorCode === RUN_ERROR_CODES.usageLimit && connection && connection.id !== RERUN_CONNECTION_ID) armPlanLimitLatch(connection.id)
@@ -383,7 +393,7 @@ async function runTurn(baseAgent: LoadedAgent, sessionId: string, userText: stri
                 recordRefusedModel(refusedOn.id, model)
                 await repairBoxDefault(refusedOn).catch(err => logger.warn({ err: String(err), connection: refusedOn.id }, 'box default repair failed'))
             }
-            if (settlement.messages) for (const message of canonicalizeHitlNames(settlement.messages)) await appendMessage(agent.id, sessionId, message).catch(() => {})
+            if (settlement.messages) for (const message of redactValue(canonicalizeHitlNames(settlement.messages), secrets)) await appendMessage(agent.id, sessionId, message).catch(() => {})
             await failRun(agent.id, run.id, errorMessage).catch(() => {})
             outcome = { kind: 'error', error: errorMessage, errorCode }
         }
@@ -518,7 +528,7 @@ async function runTurn(baseAgent: LoadedAgent, sessionId: string, userText: stri
             logger.info({ agent: agent.id, run: run.id, trigger: kind, summaryChars }, 'run context compacted')
             void recordRunCompaction(agent.id, run.id, summaryChars).catch(() => {})
             if (handover && summary && handoverN) {
-                void saveHandover(agent.id, run.id, handoverN, redactSecrets(summary, runSecrets(agent)))
+                void saveHandover(agent.id, run.id, handoverN, redactSecrets(summary, agentSecretValues(agent)))
                     .then(path => setRunHandover(agent.id, run.id, path))
                     .catch(err => logger.warn({ err: String(err), agent: agent.id, run: run.id }, 'handover note not saved'))
             }
@@ -558,7 +568,7 @@ async function runTurn(baseAgent: LoadedAgent, sessionId: string, userText: stri
             onChunk: async ({ chunk }) => {
                 if (chunk.type === 'tool-call') live?.addToolCall()
                 if (!live || (chunk.type !== 'tool-call' && chunk.type !== 'tool-result')) return
-                await recordLiveToolCall(agent.id, sessionId, run.id, steps + 1, chunk, liveCalls).catch(err => logger.warn({ err: String(err), agent: agent.id }, 'record live tool call failed'))
+                await recordLiveToolCall(agent.id, sessionId, run.id, steps + 1, chunk, liveCalls, agentSecretValues(agent)).catch(err => logger.warn({ err: String(err), agent: agent.id }, 'record live tool call failed'))
             },
             onStepFinish: async step => {
                 steps += 1
@@ -568,7 +578,7 @@ async function runTurn(baseAgent: LoadedAgent, sessionId: string, userText: stri
                 const stepCostMicros = costMicrosFrom(step.providerMetadata)
                 if (stepCostMicros !== null) runCostMicros = (runCostMicros ?? 0) + stepCostMicros
                 await bumpRunStep(agent.id, run.id, stepsToWrite()).catch(() => {})
-                await recordStepTelemetry(agent.id, sessionId, run.id, provider, model, steps, durationMs, step, stepCostMicros, agent.config.thinkingLevel ?? null, runSecrets(agent), liveCalls).catch(err => logger.warn({ err: String(err), agent: agent.id }, 'record step telemetry failed'))
+                await recordStepTelemetry(agent.id, sessionId, run.id, provider, model, steps, durationMs, step, stepCostMicros, agent.config.thinkingLevel ?? null, agentSecretValues(agent), liveCalls).catch(err => logger.warn({ err: String(err), agent: agent.id }, 'record step telemetry failed'))
             },
             onError: async ({ error }) => {
                 if (controller.signal.aborted) {
@@ -624,7 +634,7 @@ async function runTurn(baseAgent: LoadedAgent, sessionId: string, userText: stri
             )
         })().catch(err => logger.warn({ err: String(err), agent: agent.id, run: run.id }, 'run drain failed'))
 
-        return { result, runId: run.id, settled: settledPromise, contextUsage, quickReplies }
+        return { result, runId: run.id, settled: settledPromise, contextUsage, quickReplies, secrets: agentSecretValues(agent) }
     } catch (err) {
         if (controller.signal.aborted) {
             await settle({ kind: 'cancelled' })

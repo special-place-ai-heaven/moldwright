@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { migrate } from '../db/migrate.js'
 import { latestVersion } from '../db/ladder.js'
 import { foldAgentKeysIntoConnections } from '../connections/migrate.js'
-import { agentsDir, boxPlanPath, configPath, isPathSegment, mcpDir, mcpPackagesDir } from '../config/paths.js'
+import { agentsDir, boxPlanPath, codexAuthPath, codexHomeDir, configPath, connectionConfigPath, connectionDir, connectionEnvPath, connectionsDir, isPathSegment, mcpDir, mcpPackagesDir } from '../config/paths.js'
 import { logger } from '../lib/logger.js'
 
 const isMissing = (err: unknown): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT'
@@ -33,6 +33,16 @@ async function listAgentFolders(): Promise<string[]> {
     for (const name of await listDirOrEmpty(agentsDir())) {
         if (!isPathSegment(name)) continue
         const info = await lstat(resolve(agentsDir(), name)).catch(() => null)
+        if (info?.isDirectory()) folders.push(name)
+    }
+    return folders
+}
+
+async function listConnectionFolders(): Promise<string[]> {
+    const folders: string[] = []
+    for (const name of await listDirOrEmpty(connectionsDir())) {
+        if (!isPathSegment(name)) continue
+        const info = await lstat(resolve(connectionsDir(), name)).catch(() => null)
         if (info?.isDirectory()) folders.push(name)
     }
     return folders
@@ -78,6 +88,19 @@ export const DATA_DIR_MIGRATIONS: DataDirMigration[] = [
                     if (name.endsWith('.json')) await chmodRegular(resolve(mcp, name), 0o600, 'file')
                 }
                 await chmodRegular(mcp, 0o700, 'dir')
+            }
+        },
+    },
+    {
+        version: 5,
+        id: 'connection-file-modes',
+        up: async () => {
+            for (const id of await listConnectionFolders()) {
+                await chmodRegular(connectionDir(id), 0o700, 'dir')
+                await chmodRegular(connectionConfigPath(id), 0o600, 'file')
+                await chmodRegular(connectionEnvPath(id), 0o600, 'file')
+                await chmodRegular(codexHomeDir(id), 0o700, 'dir')
+                await chmodRegular(codexAuthPath(id), 0o600, 'file')
             }
         },
     },

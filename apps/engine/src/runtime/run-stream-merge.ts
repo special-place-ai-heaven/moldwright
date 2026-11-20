@@ -38,6 +38,37 @@ function normalizeHitlStream(stream: ReadableStream<UIMessageChunk>): ReadableSt
     )
 }
 
+function redactChunkSecrets(stream: ReadableStream<UIMessageChunk>, secrets: string[] | undefined): ReadableStream<UIMessageChunk> {
+    if (!secrets || secrets.length === 0) return stream
+    const scrub = (text: string) => secrets.reduce((out, s) => out.split(s).join('[redacted]'), text)
+    const scrubUnknown = (val: unknown): unknown => {
+        if (typeof val === 'string') return scrub(val)
+        if (Array.isArray(val)) return val.map(scrubUnknown)
+        if (val && typeof val === 'object') return Object.fromEntries(Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, scrubUnknown(v)]))
+        return val
+    }
+    return stream.pipeThrough(
+        new TransformStream<UIMessageChunk, UIMessageChunk>({
+            transform(chunk, controller) {
+                const c = chunk as Record<string, unknown>
+                if (typeof c.delta === 'string') {
+                    controller.enqueue({ ...chunk, delta: scrub(c.delta) } as UIMessageChunk)
+                    return
+                }
+                if ('output' in c && c.output !== undefined) {
+                    controller.enqueue({ ...chunk, output: scrubUnknown(c.output) } as UIMessageChunk)
+                    return
+                }
+                if (typeof c.errorText === 'string') {
+                    controller.enqueue({ ...chunk, errorText: scrub(c.errorText) } as UIMessageChunk)
+                    return
+                }
+                controller.enqueue(chunk)
+            },
+        }),
+    )
+}
+
 export function withQuickReplies(stream: ReadableStream<UIMessageChunk>, read: (() => QuickRepliesCapture | undefined) | undefined): ReadableStream<UIMessageChunk> {
     if (!read) return stream
     return stream.pipeThrough(
@@ -104,17 +135,20 @@ export function mergeRunStream(writer: UIMessageStreamWriter, run: AgentRun, met
     writer.merge(
         cutOffWhenSettled(
             withQuickReplies(
-                normalizeHitlStream(
-                    run.result.toUIMessageStream({
-                        messageMetadata: ({ part }) => {
-                            if (part.type === 'finish-step') {
-                                const usage = addUsage(undefined, part.usage)
-                                const context = run.contextUsage?.()
-                                return { ...meta, usage: context ? { ...usage, context } : usage }
-                            }
-                            return undefined
-                        },
-                    }),
+                redactChunkSecrets(
+                    normalizeHitlStream(
+                        run.result.toUIMessageStream({
+                            messageMetadata: ({ part }) => {
+                                if (part.type === 'finish-step') {
+                                    const usage = addUsage(undefined, part.usage)
+                                    const context = run.contextUsage?.()
+                                    return { ...meta, usage: context ? { ...usage, context } : usage }
+                                }
+                                return undefined
+                            },
+                        }),
+                    ),
+                    run.secrets,
                 ),
                 run.quickReplies,
             ),

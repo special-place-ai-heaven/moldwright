@@ -288,12 +288,17 @@ function claudeProvider(agent: LoadedAgent, tools?: ToolSet, mcpServers: RunMcpS
             thinking: { type: thinking.type, display: thinking.display },
             ...(thinking.effort ? { effort: thinking.effort } : {}),
             env: {
-                ...agentEnv,
-                ...CLAUDE_HARNESS_ENV,
-                ...claudeAuthEnv(connectionEnv(agent)),
+                ...envOverlay(
+                    childProcessEnv(agentEnv, {
+                        ...CLAUDE_HARNESS_ENV,
+                        CLAUDE_CODE_OAUTH_TOKEN: connectionEnv(agent).CLAUDE_CODE_OAUTH_TOKEN ?? '',
+                        ...(connectionEnv(agent).CLAUDE_CODE_OAUTH_REFRESH_TOKEN ? { CLAUDE_CODE_OAUTH_SCOPES: CLAUDE_SIGN_IN_SCOPES } : {}),
+                        MCP_TOOL_TIMEOUT: String(BRIDGE_TOOL_TIMEOUT_SEC * 1000),
+                        ...compactEnvFor(options.compactAt ?? compactAtTokens(agent.config.contextSize) ?? 'off'),
+                    }),
+                ),
                 ANTHROPIC_API_KEY: undefined,
-                MCP_TOOL_TIMEOUT: String(BRIDGE_TOOL_TIMEOUT_SEC * 1000),
-                ...compactEnvFor(options.compactAt ?? compactAtTokens(agent.config.contextSize) ?? 'off'),
+                ...(connectionEnv(agent).CLAUDE_CODE_OAUTH_REFRESH_TOKEN ? {} : { CLAUDE_CODE_OAUTH_SCOPES: undefined }),
             },
             ...(options.system !== undefined ? { systemPrompt: options.system } : {}),
             ...(allowedTools.length ? { mcpServers: servers, allowedTools } : {}),
