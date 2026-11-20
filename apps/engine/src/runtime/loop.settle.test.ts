@@ -58,6 +58,8 @@ const { migrate } = await import('../db/migrate.js')
 const { agentConfigSchema } = await import('../agents/types.js')
 const { writeAgentConfig } = await import('../agents/config-write.js')
 const { agentDir } = await import('../config/paths.js')
+const { writeAgentEnv } = await import('../agents/env.js')
+const { reloadAgent } = await import('../agents/registry.js')
 const { getAgent } = await import('../agents/registry.js')
 const { createSession } = await import('../db/repos/sessions.js')
 const { getRun } = await import('../db/repos/runs.js')
@@ -231,5 +233,35 @@ describe('a run always reaches a terminal state', () => {
         const kept = JSON.stringify(await listMessages(id, session.id))
         expect(kept).toContain('Run stopped by the user')
         expect(kept).toContain('four brands found')
+    })
+
+    it('redacts connection and agent secrets from runs.error and streamed text when echoed', async () => {
+        await writeAgentEnv(id, { CUSTOM_WEBHOOK_URI: 'https://hooks.test/super-secret-path' })
+        const loaded = await reloadAgent(id)
+        const withConn = {
+            ...loaded,
+            resolved: {
+                ...loaded.resolved,
+                connection: {
+                    id: 'c1',
+                    config: { name: 'OR', provider: 'openrouter' as const, models: ['m'], extraModels: [], createdAt: '2026-01-01T00:00:00Z' },
+                    env: { OPENROUTER_API_KEY: 'or-test-key-placeholder' },
+                },
+            },
+        }
+        stream.parts = [
+            { type: 'stream-start', warnings: [] },
+            { type: 'error', error: new Error('401 Invalid token or-test-key-placeholder and https://hooks.test/super-secret-path') },
+        ]
+        const session = await createSession(id, 'echo token')
+        const run = await runAgent(withConn, session.id, 'echo token')
+        const outcome = await run.settled
+        expect(outcome.kind).toBe('error')
+        expect(outcome.error).toContain('401 Invalid token [redacted]')
+        expect(outcome.error).not.toContain('or-test-key-placeholder')
+        expect(outcome.error).not.toContain('super-secret-path')
+        const row = await getRun(id, run.runId)
+        expect(row?.error).toContain('401 Invalid token [redacted]')
+        expect(row?.error).not.toContain('or-test-key-placeholder')
     })
 })

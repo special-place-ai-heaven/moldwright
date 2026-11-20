@@ -226,6 +226,12 @@ describe('v3 to v4: secret-file-modes', () => {
     })
 })
 
+describe('v4 to v5: connection-file-modes', () => {
+    it('includes step 5 connection-file-modes in DATA_DIR_MIGRATIONS', () => {
+        expect(DATA_DIR_MIGRATIONS.some(s => s.version === 5 && s.id === 'connection-file-modes')).toBe(true)
+    })
+})
+
 describe('data-dir ladder', () => {
     it('numbers its steps from 1 without gaps', () => {
         expect(DATA_DIR_MIGRATIONS.map(s => s.version)).toEqual(DATA_DIR_MIGRATIONS.map((_, i) => i + 1))
@@ -250,6 +256,10 @@ describe('data-dir ladder', () => {
             [
               4,
               "secret-file-modes",
+            ],
+            [
+              5,
+              "connection-file-modes",
             ],
           ]
         `)

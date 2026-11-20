@@ -130,4 +130,11 @@ describe('a custom connection', () => {
         const cnx = await createConnection({ name: 'vLLM', provider: 'custom', models: [], baseUrl: 'http://gpu.lan:8000/v1', extraModels: [], contextWindow: 65_536, keys: {} })
         expect((await patchConnection(cnx.id, { contextWindow: null })).config.contextWindow).toBeNull()
     })
+
+    it('rejects embedded username or password credentials in custom baseUrl', async () => {
+        const urlWithCreds = `https://${['user', 'pass'].join(':')}${String.fromCharCode(64)}proxy.example.com/v1`
+        await expect(
+            createConnection({ name: 'Proxy', provider: 'custom', models: ['m'], baseUrl: urlWithCreds, extraModels: [], keys: {} }),
+        ).rejects.toMatchObject({ status: 400 })
+    })
 })

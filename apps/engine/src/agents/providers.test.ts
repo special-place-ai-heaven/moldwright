@@ -471,4 +471,17 @@ describe('thinking level reaches the Claude CLI', () => {
         expect(captured.claude[0].effort).toBeUndefined()
         expect(captured.claude[1].effort).toBe('high')
     })
+
+    it('blanks parent process.env secrets in claudeProvider env overlay', () => {
+        const prev = process.env.RERUN_PAIR_TOKEN
+        process.env.RERUN_PAIR_TOKEN = 'secret-pair-token'
+        try {
+            captured.claude.length = 0
+            resolveModel(agentWith())
+            expect(captured.claude[0].env.RERUN_PAIR_TOKEN).toBe('')
+        } finally {
+            if (prev === undefined) delete process.env.RERUN_PAIR_TOKEN
+            else process.env.RERUN_PAIR_TOKEN = prev
+        }
+    })
 })

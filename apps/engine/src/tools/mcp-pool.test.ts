@@ -64,7 +64,8 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
 
 const { afterEach, beforeEach, describe, expect, it } = await import('vitest')
 const { McpError } = await import('@modelcontextprotocol/sdk/types.js')
-const { MCP_CONNECT_TIMEOUT_MS, MCP_IDLE_MS, acquireMcp, closeAllMcp, mcpLastToolCounts, mcpSessionStates, pooledMcpCount, reconnectMcp, releaseAgentMcp } = await import('./mcp-pool.js')
+const { writeSharedEnv } = await import('../agents/shared-env.js')
+const { MCP_CONNECT_TIMEOUT_MS, MCP_IDLE_MS, acquireMcp, agentMcpSpawn, closeAllMcp, mcpLastToolCounts, mcpSessionStates, pooledMcpCount, reconnectMcp, releaseAgentMcp } = await import('./mcp-pool.js')
 
 type Server = Parameters<typeof acquireMcp>[1]
 
@@ -458,5 +459,14 @@ describe('releaseAgentMcp failures', () => {
         expect(mcpSessionStates('a1')).toHaveLength(1)
         releaseAgentMcp('a1')
         expect(mcpSessionStates('a1')).toEqual([])
+    })
+})
+
+describe('agentMcpSpawn secret isolation', () => {
+    it('excludes unreferenced shared.env and agent.env secrets from stdio MCP spawn', async () => {
+        await writeSharedEnv({ GH_TOKEN: 'shared-gh-token-value' })
+        const out = agentMcpSpawn({ id: 'a1', env: { AGENT_SECRET: 'agent-secret-value' }, config: { tools: { sharedDb: false } } as never })
+        expect(out.env.GH_TOKEN).toBeUndefined()
+        expect(out.env.AGENT_SECRET).toBeUndefined()
     })
 })

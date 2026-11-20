@@ -49,4 +49,13 @@ describe('shell_exec', () => {
         const run = vi.fn(async () => ({ stdout: 'hello\n', stderr: '' }))
         expect(await exec(ctxWith(), run, 'echo hello')).toBe('hello\n')
     })
+
+    it('redacts every agent.env value >= 8 chars regardless of variable name, including DATABASE_URL', async () => {
+        const ctx = ctxWith()
+        ctx.agent.env = { DATABASE_URL: 'postgres://admin:supersecret@db/prod' }
+        const run = vi.fn(async () => ({ stdout: 'url=postgres://admin:supersecret@db/prod\n', stderr: '' }))
+        const out = await exec(ctx, run, 'echo $DATABASE_URL')
+        expect(out).toContain('[redacted]')
+        expect(out).not.toContain('supersecret')
+    })
 })
