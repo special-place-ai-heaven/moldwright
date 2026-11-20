@@ -1,18 +1,40 @@
 import unittest
 
-import dispatch as D
+import issuecheck
+import proof
+import redgreen
 
 
-class ReplanBrief(unittest.TestCase):
-    def test_a_changed_run_line_is_written_inside_the_run_block(self):
-        text = D.replan_brief({"issue": 5, "title": "T", "reason": "BLOCKED: x"}, "o/r", 1)
-        self.assertIn("inside the `**Run**` block", text)
-        self.assertIn("reads only that block", text)
-
-    def test_a_bullet_that_no_longer_holds_is_rewritten_where_it_stands(self):
-        text = D.replan_brief({"issue": 5, "title": "T", "reason": "BLOCKED: x"}, "o/r", 1)
-        self.assertIn("where it stands, so no bullet a correction voids is left", text)
-        self.assertIn("the prover gets every **Change** and **Corrections** bullet as an ask", text)
+class ReplanBehavior(unittest.TestCase):
+    def test_proof_asks_combines_change_and_corrections_while_redgreen_reads_only_fenced_run_lines(self):
+        body = "\n".join([
+            "PLAN READY (cut of #1; facts read on dev 1234567): one slice",
+            "**Part of**: #1",
+            "**Depends on**: none",
+            "**Worker**: coder",
+            "**Files**",
+            "- `tools/factory/proof.py`",
+            "- `tools/factory/test_dispatch_replanbrief.py`",
+            "**Test file**: `tools/factory/test_dispatch_replanbrief.py`",
+            "**Change**",
+            "- Validate the updated ask.",
+            "**Corrections**",
+            "- Run `python3 -m unittest test_dispatch_replanbrief` instead.",
+            "**Done-test**",
+            "- `test_proof_asks_combines_change_and_corrections_while_redgreen_reads_only_fenced_run_lines`",
+            "**Run**",
+            "python3 -m unittest test_dispatch_replanbrief",
+        ])
+        tree = {"tools/factory/proof.py", "tools/factory/test_dispatch_replanbrief.py"}
+        self.assertEqual(proof.change_asks(body), [
+            "Validate the updated ask.",
+            "Run `python3 -m unittest test_dispatch_replanbrief` instead.",
+        ])
+        self.assertEqual(redgreen.run_lines(body), [])
+        fenced = body.replace("**Run**\npython3 -m unittest test_dispatch_replanbrief",
+                              "**Run**\n```sh\ncd tools/factory && python3 -m unittest test_dispatch_replanbrief\n```")
+        self.assertEqual(redgreen.run_lines(fenced), ["cd tools/factory && python3 -m unittest test_dispatch_replanbrief"])
+        self.assertEqual(issuecheck.faults(fenced, tree, number=5), [])
 
 
 if __name__ == "__main__":

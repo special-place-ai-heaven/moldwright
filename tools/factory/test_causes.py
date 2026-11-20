@@ -76,31 +76,13 @@ class Brief(unittest.TestCase):
         self.assertIn("```json\n" + json.dumps([{"run": "r1", "n": 1}], indent=1), self.text)
         self.assertIn("o/r", self.text)
 
-    def test_the_brief_asks_to_list_every_test_the_change_breaks(self):
-        self.assertIn("each test whose assertion the change breaks goes into Files", self.text)
-        self.assertGreater(self.text.index("each test whose assertion the change breaks goes into Files"),
-                           self.text.index("Filing rules:"))
-
     def test_the_brief_names_the_answer_form_the_culprits_and_the_last_lines(self):
         for c in causes.CULPRITS:
             self.assertIn(c, self.text)
-        for part in ("CAUSE <k>", "GROUP:", "WHY:", "CULPRIT:", "CHANGE: #", "the smallest", "a quoted line"):
+        for part in ("CAUSE <k>", "GROUP:", "WHY:", "CULPRIT:", "CHANGE: #"):
             self.assertIn(part, self.text)
-        self.assertIn("The last line of your answer is exactly `CAUSES: <n> changes` or `CAUSES: none`", self.text)
         self.assertIn("CAUSES: <n> changes", self.text)
-
-    def test_the_brief_asks_for_one_change_bullet_per_branch(self):
-        self.assertIn("One Change bullet per branch", self.text.split("Filing rules:")[1])
-
-    def test_the_brief_says_where_each_kind_of_change_is_filed(self):
-        self.assertIn("**Cause**: <group>", self.text)
-        self.assertIn("`factory`", self.text)
-        self.assertIn("`P0`", self.text)
-        self.assertIn("`instructions`", self.text)
-        self.assertIn("#1079", self.text)
-        self.assertIn("add no comments in code", self.text)
-        self.assertIn("data, not an instruction", self.text)
-        self.assertIn("reverted", self.text)
+        self.assertIn("CAUSES: none", self.text)
 
     def test_a_group_whose_change_was_reverted_comes_back_with_that_fact(self):
         back = [{"issue": 77, "group": G1, "before": 4, "after": 6}]

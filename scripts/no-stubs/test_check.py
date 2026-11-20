@@ -51,5 +51,9 @@ class Check(unittest.TestCase):
         self.assertEqual(check.find(DIFF)[0]["line"], 2)
 
 
+    def test_catches_vitest_it_todo(self):
+        diff = "+++ b/x.test.ts\n@@ -1 +1,2 @@\n+  it.todo('later')\n+  test.todo('also later')\n"
+        self.assertEqual([h["kind"] for h in check.find(diff)], ["skipped test", "skipped test"])
+
 if __name__ == "__main__":
     unittest.main()

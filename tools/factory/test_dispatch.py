@@ -359,6 +359,27 @@ class Checks(Base):
         self.assertIn("running: image", self.w.issue(5)["comments"][-1])
         self.assertEqual(self.w.merges, [])
 
+    def test_checks_waits_until_ci_and_gate_workflows_have_registered(self):
+        self.cfg["required_workflows"] = list(D.REQUIRED_PR_WORKFLOWS)
+        self.to_checks()
+        self.w.workflows[HEAD] = [wf("No stubs or switched-off tests", "success", wid=9)]
+        self.tick()
+        self.assertEqual(self.state(), "checks")
+        self.assertEqual(self.w.merges, [])
+        self.w.workflows[HEAD] = [
+            wf("CI", "skipped", wid=1),
+            wf("No comments in code", "success", wid=2),
+            wf("No stubs or switched-off tests", "success", wid=3),
+            wf("Done-test red before green", "success", wid=4),
+            wf("Refactor commits leave tests alone", "success", wid=5),
+        ]
+        self.tick()
+        self.assertEqual(self.state(), "checks")
+        self.assertEqual(self.w.merges, [])
+        self.w.workflows[HEAD][0] = wf("CI", "success", wid=1)
+        self.tick()
+        self.assertEqual(self.state(), "merged")
+
 
 class Intake(Base):
     def test_labelled_issue_taken_and_build_goes_to_a_free_builder(self):

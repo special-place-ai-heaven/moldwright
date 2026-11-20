@@ -1,8 +1,25 @@
-import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
+import type { LoadedAgent } from '../agents/types.js'
 import type { RecalledMemory } from '../memory/store.js'
-import { curationSchema, curatorPrompt } from './curator.js'
+import { curationSchema, curatorPrompt, runCurator } from './curator.js'
+
+const { generateStructuredMock, writeMemoryMock } = vi.hoisted(() => ({
+    generateStructuredMock: vi.fn(),
+    writeMemoryMock: vi.fn().mockResolvedValue(undefined),
+}))
+vi.mock('../agents/structured.js', () => ({ generateStructured: generateStructuredMock }))
+vi.mock('../agents/providers.js', () => ({ modelFor: () => ({}) }))
+vi.mock('../connections/cli-auth.js', () => ({ ensureCliAuth: async () => () => {} }))
+vi.mock('../memory/store.js', () => ({
+    recallMemory: vi.fn().mockResolvedValue([]),
+    writeMemory: writeMemoryMock,
+    updateMemory: vi.fn().mockResolvedValue(undefined),
+    deleteMemory: vi.fn().mockResolvedValue(undefined),
+}))
 
 describe('curationSchema', () => {
     it('requires every property for strict structured output', () => {
@@ -21,10 +38,28 @@ describe('curationSchema', () => {
 })
 
 describe('the curator never writes a skill', () => {
-    it('imports nothing from the skill loader but its summaries', () => {
-        const source = readFileSync(new URL('./curator.ts', import.meta.url), 'utf8')
-        expect(source).not.toMatch(/writeSkill|writeSkillFolder|writeSkillFile|deleteSkill|applySkillProposal|skill_(create|update|edit|propose)/)
-        expect(source).toMatch(/import \{ listSkillSummaries, type SkillSummary \} from '\.\.\/skills\/loader\.js'/)
+    it('leaves the agent skills folder untouched on disk during curation', async () => {
+        const dataDir = mkdtempSync(join(tmpdir(), 'curator-skills-'))
+        const prev = process.env.RERUN_DATA_DIR
+        process.env.RERUN_DATA_DIR = dataDir
+        try {
+            const skillsDir = join(dataDir, 'agents', 'agent-1', 'skills', 'voice')
+            mkdirSync(skillsDir, { recursive: true })
+            writeFileSync(join(skillsDir, 'SKILL.md'), '---\nname: Voice\ndescription: Keep tone\n---\nBody\n')
+            generateStructuredMock.mockResolvedValueOnce({ memory: { content: 'Ships on Fridays', updateId: null }, obsoleteIds: [] })
+            const agent = {
+                id: 'agent-1',
+                config: { selfImprovement: { autoMemory: true }, tools: { skills: true } },
+                resolved: { provider: 'openrouter', connection: {} },
+            } as unknown as LoadedAgent
+            await runCurator(agent, 'sess-1', 'Always format tables with pipes', 'Got it.')
+            expect(readdirSync(join(dataDir, 'agents', 'agent-1', 'skills'))).toEqual(['voice'])
+            expect(writeMemoryMock).toHaveBeenCalledWith(agent, 'Ships on Fridays', 'learned')
+        } finally {
+            if (prev === undefined) delete process.env.RERUN_DATA_DIR
+            else process.env.RERUN_DATA_DIR = prev
+            rmSync(dataDir, { recursive: true, force: true })
+        }
     })
 })
 
