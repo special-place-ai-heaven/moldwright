@@ -104,6 +104,7 @@ jobs:
           version: 2.113.0
       - run: supabase db start
       - run: supabase db reset --local
+      - run: supabase test db
       - name: "Engine key replacement: database rehearsal"
         run: |
           set -eu
