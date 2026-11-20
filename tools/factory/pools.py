@@ -15,6 +15,18 @@ def types(cfg):
     }
 
 
+def role(cfg, worker):
+    return ((cfg.get("types") or {}).get(worker) or {}).get("role", "build")
+
+
+def build_pool(cfg, worker):
+    return "coder" if role(cfg, worker) == "review" else worker
+
+
+def review_pool(cfg, worker):
+    return worker if role(cfg, worker) == "review" else "reviewer"
+
+
 def names(cfg):
     return {c["id"]: c["name"] for t in types(cfg).values() for c in t["coworkers"]}
 

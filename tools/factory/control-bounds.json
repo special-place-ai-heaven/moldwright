@@ -13,7 +13,9 @@
     "HOUSE": 2,
     "BARBARA": 3,
     "LESLIE": 3,
-    "ADA": 3
+    "ADA": 3,
+    "CODD": 2,
+    "GRACE": 2
   },
   "wip": {
     "building": 12,

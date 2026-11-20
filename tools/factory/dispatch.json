@@ -94,6 +94,38 @@
         }
       ]
     },
+    "security": {
+      "max_jobs": 1,
+      "role": "review",
+      "coworkers": [
+        {
+          "id": "71dfdea8-3482-4f3f-b091-ed4b16a69b99",
+          "name": "BRUCE",
+          "runs": 3
+        }
+      ]
+    },
+    "data": {
+      "max_jobs": 1,
+      "optional": true,
+      "coworkers": [
+        {
+          "name": "CODD",
+          "runs": 1
+        }
+      ]
+    },
+    "contracts": {
+      "max_jobs": 1,
+      "role": "review",
+      "optional": true,
+      "coworkers": [
+        {
+          "name": "GRACE",
+          "runs": 1
+        }
+      ]
+    },
     "planner": {
       "coworkers": [
         {
