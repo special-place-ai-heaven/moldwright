@@ -99,6 +99,23 @@ class OffTheSubscription(unittest.TestCase):
         self.assertLess(self.d.pace, 1)
         self.assertEqual(len(self.w.sends), 2)
 
+    def test_the_pacing_keeps_builders_on_the_subscription_to_the_paced_count(self):
+        self.make_many(94, [R.issue(n) for n in range(5, 11)])
+        paid = self.d.cfg["builders"][0]
+        paid["provider"] = "openrouter"
+        self.beat()
+        self.w.clock += 30
+        self.beat()
+        sent = [a for _, a in self.w.order]
+        self.assertIn(paid["id"], sent)
+        self.assertLessEqual(len([a for a in sent if a != paid["id"]]), self.d.pace_slots(15))
+
+    def test_a_fix_waits_while_its_builder_is_paused_for_a_spent_key(self):
+        self.make(10)
+        agent = self.d.cfg["builders"][0]["id"]
+        strikes.fail(self.d.store, agent, self.w.clock, 1, holds.PLAN_LIMIT_HOLD_S)
+        self.assertIsNone(self.d.free_copy_of(agent))
+
     def test_a_fix_on_a_builder_on_the_subscription_waits_out_a_plan_hold(self):
         self.make(10)
         agent = self.d.cfg["builders"][0]["id"]

@@ -633,9 +633,7 @@ class Dispatcher:
         total = self.cfg.get("slots")
         if not total:
             return None
-        paced = self.pace_slots(total)
-        if paced < total:
-            total = min(total, paced + self.off_subscription_runs())
+        total = self.pace_slots(total)
         waiting = {}
         for j in self.jobs():
             s = slots.station(j)
@@ -645,11 +643,10 @@ class Dispatcher:
             waiting["resolve"] = n
         return slots.quotas(waiting, len(self.running()), total)
 
-    def off_subscription_runs(self):
-        return sum(c["runs"] for t in pools.types(self.cfg).values() for c in t["coworkers"] if (c.get("provider") or "claude") != "claude")
-
-    def take(self, j):
+    def take(self, j, agent=None):
         if self.quota is None:
+            return True
+        if agent and pools.provider_of(self.cfg, agent) != "claude":
             return True
         s = slots.station(j)
         if self.quota.get(s, 0) <= 0:
@@ -727,7 +724,7 @@ class Dispatcher:
 
     def free_copy_of(self, agent, j=None):
         mine = [c for t in pools.types(self.cfg).values() for c in t["coworkers"] if c["id"] == agent]
-        if not mine or agent in self.unresolved():
+        if not mine or agent in self.unresolved() or agent in self.held_ids():
             return None
         cfg = self.with_holds({"types": {"x": {"coworkers": mine}}})
         if j is None:
@@ -1515,7 +1512,7 @@ class Dispatcher:
             got = self.free(j.get("worker", "coder"))
             if got and self.parked(j):
                 return
-            if got and self.take(j):
+            if got and self.take(j, got[0]):
                 if self.recheck_first(j):
                     return
                 self.start(j, got[0], "build", "building", copy=got[1], builder=got[0], stale=self.stale_files(j))
@@ -1548,7 +1545,7 @@ class Dispatcher:
                 return
             first = (j.get("first_accept") or {}).get("by")
             got = self.free_second(j, first) if first else self.free("reviewer", j)
-            if not got or not self.take(j):
+            if not got or not self.take(j, got[0]):
                 return
             r = got[0]
             self.start(j, r, "review %d of #%s at %s" % (j["round"], j["pr"], head[:7]), "reviewing", copy=got[1], reviewer=r, head=head)
@@ -1595,11 +1592,11 @@ class Dispatcher:
                 self.end(j, "rejected", gist(verdict, 200) or last_line(out))
         elif st == "fix_wait" and j.get("proven") and not j.get("builder"):
             got = self.free(j.get("worker", "coder"))
-            if got and self.take(j):
+            if got and self.take(j, got[0]):
                 self.start(j, got[0], "fix of #%s" % j["pr"], "fixing", copy=got[1], builder=got[0])
         elif st == "fix_wait":
             copy = self.free_copy_of(j["builder"], j)
-            if copy is not None and self.take(j):
+            if copy is not None and self.take(j, j["builder"]):
                 self.start(j, j["builder"], "fix of #%s" % j["pr"], "fixing", copy=copy)
         elif st == "fixing":
             out = self.finished_run(j)
@@ -1613,7 +1610,7 @@ class Dispatcher:
             self.checks(j)
         elif st == "proof_wait":
             got = self.free_prover(j)
-            if got and self.take(j):
+            if got and self.take(j, got[0]):
                 self.start(j, got[0], "proof of #%s at %s" % (j["pr"], j["head"][:7]), "proving", copy=got[1], prover=got[0], asks=proof.asks(j.get("body")))
         elif st == "proving":
             out = self.finished_run(j)
