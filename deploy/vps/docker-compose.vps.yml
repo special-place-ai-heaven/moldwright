@@ -27,6 +27,7 @@ services:
 
   webgate:
     image: node:26-alpine
+    user: node
     command: node /srv/webgate/server.mjs
     volumes:
       - ./deploy/vps/webgate:/srv/webgate:ro
@@ -38,7 +39,7 @@ services:
     restart: unless-stopped
 
   searxng:
-    image: searxng/searxng:latest
+    image: searxng/searxng:2026.11.20-1ebea4a07
     volumes:
       - ./deploy/vps/searxng/settings.yml:/etc/searxng/settings.yml:ro
     environment:

@@ -14,7 +14,8 @@ type Service = {
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 
 function services(text: string): Record<string, Service> {
-  const data = matter('---\n' + text + '\n---\n').data as { services?: Record<string, Service> }
+  const normalized = text.replace(/!reset\s+/g, '')
+  const data = matter('---\n' + normalized + '\n---\n').data as { services?: Record<string, Service> }
   return data.services ?? {}
 }
 

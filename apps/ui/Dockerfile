@@ -30,6 +30,8 @@ RUN --mount=type=cache,id=rerun-ui-next-cache,target=/app/apps/ui/.next/cache \
 FROM base
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 COPY --from=build /app /app
+RUN mkdir -p /app/apps/ui/.next/cache && chown -R node:node /app/apps/ui/.next/cache
 WORKDIR /app/apps/ui
+USER node
 EXPOSE 3000
 CMD ["node", "node_modules/next/dist/bin/next", "start"]
