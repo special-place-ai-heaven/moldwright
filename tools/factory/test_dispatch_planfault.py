@@ -36,6 +36,14 @@ class Judge(unittest.TestCase):
     def test_a_plan_line_under_another_commit_is_none(self):
         self.assertEqual(proof.judge(lines(2) + "\nPROOF: FAIL @1234567: 2", 5, HEAD)[0], "none")
 
+    def test_a_plain_not_met_with_punctuation_stays_a_fail(self):
+        self.assertEqual(proof.judge("ASK 1: MET a/b.py:1 test_1\nASK 2: NOT MET. Files lacks a path\nPROOF: FAIL @abcdef1: 2", 2, HEAD)[0], "fail")
+
+    def test_a_plan_line_with_punctuation_after_plan_is_a_plan_result(self):
+        for line in ("ASK 2: NOT MET (plan). Files lacks a path", "ASK 2: NOT MET (plan): Files lacks a path"):
+            with self.subTest(line=line):
+                self.assertEqual(proof.judge("ASK 1: MET a/b.py:1 test_1\n" + line + "\nPROOF: FAIL @abcdef1: 2", 2, HEAD)[0], "plan")
+
 
 class Flow(P.ProofBase):
     def setUp(self):

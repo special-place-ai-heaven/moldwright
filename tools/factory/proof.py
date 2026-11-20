@@ -88,7 +88,7 @@ def judge(out, count, head):
         if a:
             got[int(a.group(1))] = a.group(2) == "MET"
     notmet = [l for l in lines if re.match(r"ASK \d+: NOT MET\b", l) and ASK_LINE.match(l)]
-    if notmet and all(re.match(r"ASK \d+: NOT MET \(plan\) \S", l) for l in notmet):
+    if notmet and all(re.match(r"ASK \d+: NOT MET \(plan\)[.:,;]? +\S", l) for l in notmet):
         return "plan", gist("\n".join(notmet), 1500)
     if m.group(1) == "FAIL":
         return "fail", gist(" | ".join([m.group(3) or "no ask numbers"] + [l for l in lines if re.match(r"ASK \d+: NOT MET\b", l)]), 300)
