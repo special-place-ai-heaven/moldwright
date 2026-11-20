@@ -2095,9 +2095,12 @@ class Dispatcher:
         except Exception as e:
             clean = False
             log("-", "replans: %s" % (e if isinstance(e, Error) else type(e).__name__))
+        stepped, raised = set(), []
         for j in self.jobs():
+            before = {k: j[k] for k in ("errors", "failing_since", "last_error") if k in j}
             try:
                 if j["state"] not in END:
+                    stepped.add(j["issue"])
                     self.step(j)
                     self.note_wait(j)
                 if j["state"] in END and not j.get("relabelled"):
@@ -2116,6 +2119,18 @@ class Dispatcher:
                 j["errors"] = j.get("errors", 0) + 1
                 j.setdefault("failing_since", self.now())
                 self.save(j, "pass failed")
+                raised.append((j, before))
+        if len(stepped) >= 2 and {j["issue"] for j, _ in raised} == stepped:
+            for j, before in raised:
+                for k in ("errors", "failing_since", "last_error"):
+                    if k in before:
+                        j[k] = before[k]
+                    else:
+                        j.pop(k, None)
+                self.save(j, "pass outage")
+            log("-", "pass outage: %d jobs failed, counters kept" % len(raised))
+        else:
+            for j, _ in raised:
                 if j["errors"] >= 20 and self.now() - j["failing_since"] >= FAIL_AFTER_S and j["state"] not in END:
                     self.end(j, "failed", "20 passes in a row failed in state %s: %s" % (j["state"], j["last_error"]))
         try:
