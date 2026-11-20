@@ -173,10 +173,11 @@ class Station:
                 continue
             if self.open_children(n):
                 continue
-            parent = json.loads(self.gh(["issue", "view", str(n), "-R", self.repo, "--json", "title,body,comments,state"]))
+            parent = json.loads(self.gh(["issue", "view", str(n), "-R", self.repo, "--json", "title,body,state"]))
             if parent.get("state") == "CLOSED":
                 self.store.set("accept:%d" % n, "state", "closed")
                 continue
+            parent["comments"] = trust.comments(self.gh, self.repo, n)
             parent["number"] = n
             found, cut = self.closed_children(n)
             others = [i for i in found if i["number"] not in due_map[n]]

@@ -24,6 +24,7 @@ ACCEPT = "".join("EVIDENCE %d: shown\n" % n for n in range(1, 21)) + "VERDICT: A
 
 
 FACTORY = {"login": "app/moldwright-factory", "is_bot": True}
+FACTORY_BOT = {"login": "moldwright-factory[bot]", "type": "Bot"}
 
 
 class World:
@@ -168,6 +169,9 @@ class World:
         gone = a[0] == "issue" and len(a) > 2 and a[2].isdigit() and int(a[2]) in self.deleted
         if a[:2] == ["issue", "create"] or "factory-problem" in a or (a[0] == "issue" and self.problem(a)) or timeline or gone:
             return self.problem_gh(a)
+        if a[0] == "api" and a[1].endswith("/comments") and "--paginate" in a:
+            i = self.issue(a[1].split("/")[-2])
+            return "\n".join(json.dumps({"user": FACTORY_BOT, "author_association": "NONE", "body": c}) for c in i["comments"])
         if a[0] == "api" and "POST" in a and a[-1].endswith("/rerun"):
             self.reruns.append(a[-1])
             return ""
@@ -202,7 +206,7 @@ class World:
         if a[:2] == ["issue", "view"]:
             i = self.issue(a[2])
             return json.dumps({"title": i.get("title", ""), "state": i.get("state", "OPEN"), "body": i["body"],
-                               "comments": [{"body": c, "author": FACTORY} for c in i["comments"]]})
+                               "comments": [{"body": c} for c in i["comments"]]})
         if a[:2] == ["issue", "close"]:
             self.closed.append((int(a[2]), a[a.index("--comment") + 1]))
             for i in self.issues:

@@ -52,7 +52,7 @@ class Trust(unittest.TestCase):
 
     def test_the_runner_trusts_text_written_by_the_factory_bot(self):
         import runner_loop
-        self.assertTrue(runner_loop.trust.trusted({"author_association": "NONE", "user": {"login": "moldwright-factory[bot]"}}))
+        self.assertTrue(runner_loop.trust.trusted({"author_association": "NONE", "user": {"login": "moldwright-factory[bot]", "type": "Bot"}}))
         self.assertFalse(runner_loop.trust.trusted({"author_association": "NONE", "user": {"login": "someone"}}))
 
 

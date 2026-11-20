@@ -274,7 +274,7 @@ def answer_of(question, view):
     options = question.get("options") or []
     for c in reversed(view.get("comments") or []):
         found = ANSWER.findall(c.get("body") or "")
-        if not found or not trust.trusted(c):
+        if not found or not trust.person(c):
             continue
         text = found[-1].strip()
         if text.isdigit() and 1 <= int(text) <= len(options):
@@ -793,8 +793,7 @@ class Station:
             pass
 
     def latest_plan(self, n):
-        view = json.loads(self.gh(["issue", "view", str(n), "-R", self.repo, "--json", "title,body,comments"]))
-        plans = [c.get("body") or "" for c in view.get("comments", []) if (c.get("body") or "").startswith("## Plan") and trust.trusted(c)]
+        plans = [c.get("body") or "" for c in trust.comments(self.gh, self.repo, n) if (c.get("body") or "").startswith("## Plan") and trust.trusted(c)]
         return plans[-1] if plans else None
 
     def free_critic(self, r):

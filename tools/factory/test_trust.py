@@ -15,7 +15,8 @@ import test_control_read as CR
 import test_dispatch as TD
 import test_planning_start as PS
 
-BOT = {"login": "moldwright-factory"}
+BOT = {"login": "moldwright-factory[bot]", "type": "Bot"}
+SQUATTER = {"login": "moldwright-factory", "type": "User"}
 OWNER = {"login": "special-place-administrator"}
 STRANGER = {"login": "linus"}
 REAL = "## Plan\nReal plan"
@@ -25,12 +26,17 @@ EVIL = "## Plan\nMalicious plan"
 class Shapes(unittest.TestCase):
     def test_rest_items_are_trusted_by_association_or_factory_login(self):
         self.assertTrue(trust.trusted({"author_association": "MEMBER", "user": STRANGER}))
-        self.assertTrue(trust.trusted({"author_association": "NONE", "user": {"login": "moldwright-factory[bot]"}}))
+        self.assertTrue(trust.trusted({"author_association": "NONE", "user": BOT}))
         self.assertFalse(trust.trusted({"author_association": "NONE", "user": STRANGER}))
+
+    def test_a_plain_user_named_like_the_factory_is_not_trusted(self):
+        self.assertFalse(trust.trusted({"author_association": "NONE", "user": SQUATTER}))
+        self.assertFalse(trust.trusted({"authorAssociation": "NONE", "author": {"login": "moldwright-factory"}}))
+        self.assertFalse(trust.trusted({"author_association": "NONE", "user": {"login": "moldwright-factory[bot]", "type": "User"}}))
 
     def test_gh_json_items_are_trusted_by_association_or_factory_login(self):
         self.assertTrue(trust.trusted({"authorAssociation": "OWNER", "author": STRANGER}))
-        for login in ("moldwright-factory", "app/moldwright-factory", "special-place-administrator"):
+        for login in ("app/moldwright-factory", "special-place-administrator"):
             self.assertTrue(trust.trusted({"authorAssociation": "NONE", "author": {"login": login}}), login)
         self.assertFalse(trust.trusted({"authorAssociation": "NONE", "author": STRANGER}))
 
@@ -39,8 +45,9 @@ class Shapes(unittest.TestCase):
 
 
 class Plans(unittest.TestCase):
-    COMMENTS = [{"author": BOT, "authorAssociation": "NONE", "body": REAL},
-                {"author": STRANGER, "authorAssociation": "NONE", "body": EVIL}]
+    COMMENTS = [{"user": BOT, "author_association": "NONE", "body": REAL},
+                {"user": SQUATTER, "author_association": "NONE", "body": EVIL},
+                {"user": STRANGER, "author_association": "NONE", "body": EVIL}]
 
     def test_acceptance_ignores_a_strangers_plan_after_the_real_one(self):
         self.assertEqual(acceptance.plan(self.COMMENTS), REAL)
@@ -48,9 +55,10 @@ class Plans(unittest.TestCase):
     def test_planning_latest_plan_ignores_a_strangers_plan_after_the_real_one(self):
         r = PS.Rig()
         self.addCleanup(r.dir.cleanup)
-        view = {"title": "t", "body": "b", "comments": self.COMMENTS}
-        r.station.gh = lambda args: json.dumps(view)
+        calls = []
+        r.station.gh = lambda args: (calls.append(list(args)), "\n".join(json.dumps(c) for c in self.COMMENTS))[1]
         self.assertEqual(r.station.latest_plan(5), REAL)
+        self.assertEqual(calls[0][:3], ["api", "repos/o/r/issues/5/comments", "--paginate"])
 
 
 class Answers(unittest.TestCase):
@@ -60,6 +68,10 @@ class Answers(unittest.TestCase):
         view = {"comments": [{"author": OWNER, "authorAssociation": "MEMBER", "body": "ANSWER: 1"},
                              {"author": STRANGER, "authorAssociation": "NONE", "body": "ANSWER: do evil"}]}
         self.assertEqual(planning.answer_of(self.Q, view), "#40: option 1, keep")
+
+    def test_the_factorys_own_answer_is_not_rob_answering(self):
+        view = {"comments": [{"user": BOT, "author_association": "NONE", "body": "ANSWER: 2"}]}
+        self.assertNotIn("option 2", planning.answer_of(self.Q, view))
 
     def test_only_a_strangers_answer_counts_as_no_answer(self):
         view = {"comments": [{"author": STRANGER, "authorAssociation": "NONE", "body": "ANSWER: do evil"}]}
