@@ -633,7 +633,8 @@ class Dispatcher:
         total = self.cfg.get("slots")
         if not total:
             return None
-        total = self.pace_slots(total)
+        if not (self.cfg.get("held_plan") and self.off_subscription()):
+            total = self.pace_slots(total)
         waiting = {}
         for j in self.jobs():
             s = slots.station(j)
@@ -642,6 +643,9 @@ class Dispatcher:
         if n := self.resolver.waiting(self):
             waiting["resolve"] = n
         return slots.quotas(waiting, len(self.running()), total)
+
+    def off_subscription(self):
+        return any((c.get("provider") or "claude") != "claude" for t in pools.types(self.cfg).values() for c in t["coworkers"])
 
     def take(self, j):
         if self.quota is None:
@@ -681,10 +685,13 @@ class Dispatcher:
         t = pools.types(self.cfg).get(worker)
         if t is None:
             return None
-        cfg = {"types": {worker: dict(t, coworkers=[c for c in t["coworkers"] if c["id"] not in skip])}}
+        cfg = self.with_holds({"types": {worker: dict(t, coworkers=[c for c in t["coworkers"] if c["id"] not in skip])}})
         if j is None:
             return pools.pick_copy(cfg, worker, self.running())
         return self.warm_pick(j, pools.free_copies(cfg, worker, self.running()))
+
+    def with_holds(self, cfg):
+        return dict(cfg, held=self.cfg.get("held"), held_plan=self.cfg.get("held_plan"))
 
     def cache_kind(self, agent):
         for t in (self.cfg.get("types") or {}).values():
@@ -719,10 +726,11 @@ class Dispatcher:
         mine = [c for t in pools.types(self.cfg).values() for c in t["coworkers"] if c["id"] == agent]
         if not mine or agent in self.unresolved():
             return None
+        cfg = self.with_holds({"types": {"x": {"coworkers": mine}}})
         if j is None:
-            got = pools.pick_copy({"types": {"x": {"coworkers": mine}}}, "x", self.running())
+            got = pools.pick_copy(cfg, "x", self.running())
             return got[1] if got else None
-        got = self.warm_pick(j, pools.free_copies({"types": {"x": {"coworkers": mine}}}, "x", self.running()))
+        got = self.warm_pick(j, pools.free_copies(cfg, "x", self.running()))
         return got[1] if got else None
 
     def inbox(self):
@@ -1112,7 +1120,8 @@ class Dispatcher:
             message = "%s\n\n%s" % (handover.line(note), message)
         j["intent_at"] = iso(self.now())
         j["fire_id"] = self.store.intent(str(j["issue"]), "", step, coworker=self.names.get(agent, agent), at=j["intent_at"],
-                                         model=(j.get("run_model") or {}).get("model"), thinking=(j.get("run_model") or {}).get("thinkingLevel"))
+                                         model=(j.get("run_model") or {}).get("model") if pools.provider_of(self.cfg, agent) == "claude" else None,
+                                         thinking=(j.get("run_model") or {}).get("thinkingLevel") if pools.provider_of(self.cfg, agent) == "claude" else None)
         self.save(j, step)
         self.store.set(str(j["issue"]), "seen", "")
         args = {"agentId": agent, "message": message, "waitSeconds": WAIT_S}
@@ -1120,7 +1129,7 @@ class Dispatcher:
             args["copyIndex"] = copy
         if state in GOALS:
             args["goal"] = {"lastLineForms": GOALS[state], "turnLimit": 3}
-        if j.get("run_model"):
+        if j.get("run_model") and pools.provider_of(self.cfg, agent) == "claude":
             args["model"] = j["run_model"]["model"]
             args["thinkingLevel"] = j["run_model"]["thinkingLevel"]
         try:
@@ -1176,8 +1185,13 @@ class Dispatcher:
             self.store.close_run(j["run"], "error", error=why[:200], **self.kept_tokens(j["run"]))
             return self.transient(j, why)
         if clocks.klass(kind, row) == "plan_limit":
-            return self.plan_limit(j, why, str(r.get("error") or "-"))
+            return self.plan_limit_or_fail(j, why, str(r.get("error") or "-"))
         return self.failed_attempt(j, why, "ended")
+
+    def plan_limit_or_fail(self, j, why, error):
+        if pools.provider_of(self.cfg, j.get("agent")) != "claude":
+            return self.failed_attempt(j, why, "ended")
+        return self.plan_limit(j, why, error)
 
     def close_stale(self):
         ids = {n: a for a, n in self.names.items()}
@@ -1248,7 +1262,8 @@ class Dispatcher:
         if j.get("attempt", 1) >= 2:
             self.end(j, "failed", why + (" (second time)" if how == "ended" else ""))
             return None
-        if self.cfg.get("held") or holds.active(self.store, self.now()) is not None:
+        if self.cfg.get("held") or holds.blocks_all(self.store, self.now()) or (
+                holds.blocks_subscription(self.store, self.now()) and pools.provider_of(self.cfg, j["agent"]) == "claude"):
             j.update(state=BACK[j["state"]], retry_attempt=2, sending=None)
             self.save(j, "failed attempt, held: %s" % why[:160])
             log(j["issue"], "failed attempt, back to %s; sending held: %s" % (j["state"], why[:160]))
@@ -1477,8 +1492,10 @@ class Dispatcher:
         st = j["state"]
         if j.get("sending"):
             return self.lost_run(j)
-        if st in states.QUEUE and (self.cfg.get("held") or holds.active(self.store, self.now()) is not None):
-            return
+        if st in states.QUEUE:
+            self.cfg["held_plan"] = holds.blocks_subscription(self.store, self.now())
+            if self.cfg.get("held") or holds.blocks_all(self.store, self.now()):
+                return
         if st in states.QUEUE and j.get("not_before") and self.now() < j["not_before"]:
             return
         if st == "queued" and proven_line(j.get("body")):
@@ -2032,7 +2049,8 @@ class Dispatcher:
         self.heartbeat()
         self.renewal_hold()
         self.drain_hold()
-        self.cfg["held"] = holds.active(self.store, self.now()) is not None
+        self.cfg["held"] = holds.blocks_all(self.store, self.now())
+        self.cfg["held_plan"] = holds.blocks_subscription(self.store, self.now())
         if self.reporting:
             self.control.tick(self.beats)
         clean = True
@@ -2215,7 +2233,7 @@ class Dispatcher:
             records = self.station.records()
             live = self.station.live()
             out["plans"] = {str(n): r.get("state") for n, r in sorted(records.items()) if r.get("state") not in planning.ENDED}
-            out["planner_free"] = len(pools.free_copies(dict(self.cfg, held=False), "planner", self.station.running()))
+            out["planner_free"] = len(pools.free_copies(dict(self.cfg, held=False, held_plan=False), "planner", self.station.running()))
             out["planner_room"] = self.station.parallel - len(live)
             out["planner_copies"] = {c["name"]: c["runs"] for c in (pools.types(self.cfg).get("planner") or {}).get("coworkers", [])}
         except Exception as e:  # noqa: BLE001
