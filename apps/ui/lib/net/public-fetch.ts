@@ -18,17 +18,44 @@ for (const [network, prefix] of [
     NON_PUBLIC.addSubnet(network, prefix, 'ipv4')
 for (const [network, prefix] of [
     ['::', 127],
+    ['64:ff9b::', 96],
+    ['100::', 64],
+    ['2001:db8::', 32],
+    ['2002::', 16],
     ['fc00::', 7],
     ['fe80::', 10],
     ['ff00::', 8],
 ] as const)
     NON_PUBLIC.addSubnet(network, prefix, 'ipv6')
 
+function ipv4FromMapped(address: string): string | null {
+    const lower = address.toLowerCase()
+    if (!lower.startsWith('::ffff:')) return null
+    const tail = lower.slice(7)
+    if (isIP(tail) === 4) return tail
+    const parts = tail.split(':')
+    if (parts.length === 2 && parts.every(part => /^[0-9a-f]{1,4}$/.test(part))) {
+        const hi = parseInt(parts[0]!, 16)
+        const lo = parseInt(parts[1]!, 16)
+        return `${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`
+    }
+    return null
+}
+
+function isPublicAddress(address: string, family: number): boolean {
+    if (family === 6) {
+        const mapped = ipv4FromMapped(address)
+        if (mapped) return !NON_PUBLIC.check(mapped, 'ipv4')
+        return !NON_PUBLIC.check(address, 'ipv6')
+    }
+    return !NON_PUBLIC.check(address, 'ipv4')
+}
+
 export async function resolvesToPublicAddresses(hostname: string): Promise<boolean> {
     const host = hostname.replace(/^\[|\]$/g, '')
     try {
         const addresses = isIP(host) ? [{ address: host, family: isIP(host) }] : await lookup(host, { all: true })
-        return addresses.length > 0 && addresses.every(({ address, family }) => !NON_PUBLIC.check(address, family === 6 ? 'ipv6' : 'ipv4'))
+        return addresses.length > 0 && addresses.every(({ address, family }) => isPublicAddress(address, family))
     } catch {
         return false
     }

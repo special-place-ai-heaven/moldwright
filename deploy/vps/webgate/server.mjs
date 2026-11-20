@@ -23,7 +23,7 @@ const CRAWLER_CONFIG = {
     },
 }
 
-const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|\[?::1\]?$)|\.(internal|local|localhost)\.?$/i
+const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|\[?(::1|::|::ffff:|64:ff9b:|100:|2001:db8:|2002:|f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:|ff[0-9a-f]{2}:))|\.(internal|local|localhost)\.?$/i
 
 export function isPublicUrl(url) {
     try {

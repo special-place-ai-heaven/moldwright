@@ -21,6 +21,7 @@ import { activateAutomations } from './automations.js'
 import { hasPendingSetup } from './setup.js'
 import { ARCHIVE_LIMITS, ARCHIVE_ROOTS, MANIFEST_PATH, mcpAuthServers, registryConnectorSlugs, requiredEnvKeys } from './archive.js'
 import { readRegistry } from '../services/registry.js'
+import { isPinnedSpec, parseNpxLaunch } from '../tools/mcp-packages.js'
 import { parseEnvFile, writeAgentEnv } from './env.js'
 import { writeAgentConfig } from './config-write.js'
 import { loadAgentFromDisk } from './loader.js'
@@ -94,14 +95,21 @@ function rebindAgentId(config: AgentConfig, id: string): AgentConfig {
     const bind = (value: string) => value.replaceAll('${agent.id}', id)
     const bindRecord = (record: Record<string, string>) => Object.fromEntries(Object.entries(record).map(([key, value]) => [key, bind(value)]))
 
-    const mcpServers: McpServer[] = config.mcpServers.map(server => ({
-        ...server,
-        ...(server.command === undefined ? {} : { command: bind(server.command) }),
-        ...(server.url === undefined ? {} : { url: bind(server.url) }),
-        args: server.args.map(bind),
-        env: bindRecord(server.env),
-        headers: bindRecord(server.headers),
-    }))
+    const mcpServers: McpServer[] = config.mcpServers
+        .filter(server => {
+            const isStdio = server.transport === 'stdio' || (!server.transport && Boolean(server.command) && !server.url)
+            if (!isStdio) return true
+            const launch = parseNpxLaunch(server)
+            return launch !== null && isPinnedSpec(launch.spec)
+        })
+        .map(server => ({
+            ...server,
+            ...(server.command === undefined ? {} : { command: bind(server.command) }),
+            ...(server.url === undefined ? {} : { url: bind(server.url) }),
+            args: server.args.map(bind),
+            env: bindRecord(server.env),
+            headers: bindRecord(server.headers),
+        }))
 
     return { ...config, mcpServers }
 }

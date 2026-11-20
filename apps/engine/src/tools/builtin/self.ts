@@ -12,6 +12,7 @@ import { mcpToolNameFor, probeMcp } from '../mcp.js'
 import { agentMcpSpawn } from '../mcp-pool.js'
 import { describeConnectorState } from '../mcp-index.js'
 import { connectorServerStates } from '../../services/registry.js'
+import { isHttpUrl, isPublicLiteralHost } from '../../lib/public-fetch.js'
 import {
     clearPending,
     discoverDeviceAuth,
@@ -96,6 +97,11 @@ export function selfTools(ctx: RunContext): ToolSet {
                 const server = mcpServerSchema.parse({ ...input, env: {} })
                 if (server.name === BRIDGE_SERVER_NAME) return `${new ReservedMcpServerNameError().message}\nNothing was saved.`
                 if (!MCP_SERVER_NAME_RE.test(server.name)) return `${new InvalidMcpServerNameError(server.name).message}\nNothing was saved.`
+                if (server.url && !server.url.includes('${')) {
+                    if (!isHttpUrl(server.url) || !isPublicLiteralHost(new URL(server.url).hostname)) {
+                        return `Could not register MCP server "${server.name}": ${server.url} is not a public HTTP(S) URL\nNothing was saved.`
+                    }
+                }
                 const probe = await probeMcp(id, server, ctx.agent.env, { spawn: agentMcpSpawn(ctx.agent) })
                 const needsLogin = !probe.ok && isAuthError(probe.error)
                 if (needsLogin && serverCarriesCredential(server)) {

@@ -1,10 +1,10 @@
 import { normalizeDomain } from '@/lib/services/brand-icon'
-
+import { assertPublicUrl } from '@/lib/net/public-fetch'
 const FIRECRAWL_BASE_URL = process.env.RERUN_FIRECRAWL_BASE_URL ?? 'https://api.firecrawl.dev'
 const SCRAPE_TIMEOUT_MS = 20_000
 const MAX_MARKDOWN = 15_000
 
-const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|\[?::1\]?$)/i
+const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|\[?(::1|::|::ffff:|64:ff9b:|100:|2001:db8:|2002:|f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:|ff[0-9a-f]{2}:))/i
 
 export function companySiteUrl(input: string): string | null {
     const domain = normalizeDomain(input)
@@ -52,8 +52,8 @@ export type PageScrape = { status: number | null; ok: boolean; markdown: string;
 export async function scrapePage(url: string): Promise<PageScrape | null> {
     const apiKey = process.env.FIRECRAWL_API_KEY
     if (!apiKey) return null
-
     try {
+        await assertPublicUrl(url)
         const res = await requestFirecrawlPastRateLimit('/v2/scrape', { url, formats: ['markdown', 'rawHtml'], proxy: 'auto' }, apiKey, PAGE_TIMEOUT_MS)
         if (!res.ok) return { status: res.status, ok: false, markdown: '', rawHtml: '', pageStatus: null }
 

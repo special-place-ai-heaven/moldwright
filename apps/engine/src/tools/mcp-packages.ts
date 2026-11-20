@@ -58,7 +58,7 @@ function binOf(installDir: string): string | null {
 
 function npmInstall(spec: string, installDir: string): Promise<void> {
     return new Promise((done, fail) => {
-        const child = spawn('npm', ['install', '--prefix', installDir, '--no-audit', '--no-fund', '--loglevel=error', spec], { stdio: ['ignore', 'ignore', 'pipe'], env: childProcessEnv({}) })
+        const child = spawn('npm', ['install', '--prefix', installDir, '--ignore-scripts', '--no-audit', '--no-fund', '--loglevel=error', spec], { stdio: ['ignore', 'ignore', 'pipe'], env: childProcessEnv({}) })
         let stderr = ''
         child.stderr.on('data', chunk => (stderr = (stderr + String(chunk)).slice(-2000)))
         const timer = setTimeout(() => child.kill('SIGKILL'), INSTALL_TIMEOUT_MS)

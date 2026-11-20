@@ -241,11 +241,12 @@ async function scanFile(root: string, path: string, bytes: number): Promise<stri
     }
 }
 
-function noteFor(path: string, redaction: Redaction | null): string {
+function noteFor(path: string, bytes: number, redaction: Redaction | null): string {
     if (redaction?.reason) return redaction.reason
     if (path.startsWith('memory/')) return 'memory'
-    if (path === AGENT_DB_PATH) return 'agent database'
+    if (path === AGENT_DB_PATH) return 'agent database (binary, not scanned for secrets)'
     if (path === INSTALL_PATH) return 'setup instructions replayed on the copy'
+    if (isBinary(path) || bytes > MAX_SCAN_BYTES) return 'not scanned for secrets'
     return ''
 }
 
@@ -268,7 +269,7 @@ export async function planArchive(id: string, exclude: string[] = []): Promise<A
             bytes,
             flagged,
             defaultExcluded: flagged.length > 0 || path.startsWith('memory/'),
-            note: noteFor(path, redaction),
+            note: noteFor(path, bytes, redaction),
         })
         totalBytes += bytes
     }

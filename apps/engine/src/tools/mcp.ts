@@ -62,6 +62,9 @@ async function listAllTools(client: Client): Promise<McpTool[]> {
         cursor = page.nextCursor && !seenCursors.has(page.nextCursor) ? page.nextCursor : undefined
         if (!cursor) break
         seenCursors.add(cursor)
+        if (pages === MAX_TOOL_PAGES - 1) {
+            logger.warn({ pages: MAX_TOOL_PAGES, tools: tools.length }, 'mcp tool list hit page cap')
+        }
     }
     return tools
 }

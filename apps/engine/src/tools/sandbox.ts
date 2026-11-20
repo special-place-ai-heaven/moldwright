@@ -44,7 +44,7 @@ export async function resolveWithinReal(root: string, path: string, { followLast
     const realRoot = await realpathExisting(root)
     const real = followLast ? await realpathExisting(target) : join(await realpathExisting(dirname(target)), basename(target))
     assertInside(realRoot, real, path)
-    return target
+    return followLast ? real : target
 }
 
 export function resolveInWorkspace(agentId: string, path: string): Promise<string> {
