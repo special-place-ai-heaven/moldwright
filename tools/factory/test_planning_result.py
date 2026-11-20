@@ -123,7 +123,6 @@ class UntrustedAuthorsTest(unittest.TestCase):
         }
         self.assertEqual(planning.answer_of(q, mixed_view), "#7: option 1, first")
 
-        # Test Station.latest_plan ignores untrusted comments
         comments = [
             {"author": {"login": "moldwright-factory[bot]"}, "body": "## Plan\nReal plan"},
             {"author": {"login": "random-stranger"}, "body": "## Plan\nMalicious plan"},
