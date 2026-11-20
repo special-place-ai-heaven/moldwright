@@ -15,7 +15,7 @@ LISTS = ("plan_label_no_plan", "ready_label_ended_job", "parked_but_moving", "du
 
 
 def read(gh, repo):
-    return json.loads(gh(["issue", "list", "-R", repo, "--state", "open", "--limit", LIMIT, "--json", "number,labels,title"]))
+    return json.loads(gh(["issue", "list", "-R", repo, "--state", "open", "--limit", LIMIT, "--json", "number,labels,title,body"]))
 
 
 def names(i):
@@ -80,12 +80,22 @@ IDLE_PLAN = ("blocked", "lost")
 DONE_ACCEPT = ("accepted", "closed")
 
 
-def busy(n, data):
+def busy(n, data, issues=()):
     j = data["jobs"].get(str(n))
-    plan = (data["kv"].get("plan:%d" % n) or {}).get("state")
-    accept = (data["kv"].get("accept:%d" % n) or {}).get("state")
-    return ((j is not None and j["state"] not in states.END) or (plan is not None and plan not in IDLE_PLAN)
-            or (accept is not None and accept not in DONE_ACCEPT))
+    kv = data["kv"]
+    plan = (kv.get("plan:%d" % n) or {}).get("state")
+    accept = (kv.get("accept:%d" % n) or {}).get("state")
+    recheck = (kv.get("recheck:%d" % n) or {}).get("state")
+    classify = (kv.get("classify:%d" % n) or {}).get("state")
+    if ((j is not None and j["state"] not in states.END) or (plan is not None and plan not in IDLE_PLAN)
+            or (accept is not None and accept not in DONE_ACCEPT) or recheck in ("sending", "running")
+            or classify == "running"):
+        return True
+    if issues:
+        part = re.compile(r"Part of\W*#%d\b" % n)
+        if any(i.get("number") != n and part.search(i.get("body") or "") for i in issues):
+            return True
+    return False
 
 
 def body(gh, repo, n):
@@ -96,13 +106,16 @@ def covered(gh, repo, dup, n):
     kept = body(gh, repo, dup["keep"])
     if not re.search(r"Part of\W*#%d\b" % dup["parent"], kept):
         return "#%d does not say it is part of #%d" % (dup["keep"], dup["parent"])
-    extra = set(escapes.repairs(body(gh, repo, n))) - set(escapes.repairs(kept))
+    old_repairs = escapes.repairs(body(gh, repo, n))
+    if not old_repairs:
+        return "it has no **Repairs** numbers to compare"
+    extra = set(old_repairs) - set(escapes.repairs(kept))
     if extra:
         return "it lists repairs %s that #%d does not" % (", ".join("#%d" % x for x in sorted(extra)), dup["keep"])
     return None
 
 
-def close_gaps(gh, repo, store, drift, data):
+def close_gaps(gh, repo, store, drift, data, issues=()):
     out, used = [], 0
     for dup in drift.get("duplicate_gaps") or []:
         for n in dup["older"]:
@@ -111,7 +124,7 @@ def close_gaps(gh, repo, store, drift, data):
             tries = int(rec.get("tries") or 0)
             if rec.get("closed") or rec.get("kept") or tries >= TRIES:
                 continue
-            if busy(n, data):
+            if busy(n, data, issues):
                 if rec.get("seen"):
                     store.set(job, "seen", "")
                 continue

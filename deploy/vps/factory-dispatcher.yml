@@ -12,6 +12,7 @@ services:
       HOME: /tmp
       DISPATCH_ACCOUNT_URL: ${FACTORY_ACCOUNT_URL:?set FACTORY_ACCOUNT_URL in deploy/vps/.env}
       FACTORY_KEEPER_FILE: /keeper/machine.json
+      FACTORY_DISPATCHER: "1"
     volumes:
       - ../../tools/factory:/app:ro
       - factory-dispatcher-data:/state

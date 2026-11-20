@@ -176,7 +176,7 @@ class World:
             return ""
         if a[:2] == ["issue", "list"] and "--search" in a and any(x.startswith("Part of #") for x in a):
             return json.dumps(self.open_children if self.search_finds else [])
-        if a[:2] == ["issue", "list"] and "--search" not in a and "--label" not in a and "number,body" in a:
+        if a[:2] == ["issue", "list"] and "--search" not in a and "--label" not in a and ("number,body" in a or "number,title,body" in a):
             return json.dumps(self.open_children)
         if a[:2] == ["issue", "list"] and "Factory follow-ups inbox in:title" in a:
             return json.dumps([{"number": p["number"], "title": p["title"]} for p in self.problems if p["state"] == "OPEN"])
@@ -388,7 +388,8 @@ class Depends(Base):
         return {"number": n, "title": title or "t%d" % n, "body": ready("intro\nmore", line), "comments": []}
 
     def open_calls(self):
-        return [c for c in self.w.gh_calls if c[:2] == ["issue", "list"] and "--label" not in c and "--search" not in c and "number,labels,title" not in c]
+        return [c for c in self.w.gh_calls if c[:2] == ["issue", "list"] and "--label" not in c and "--search" not in c
+                and not any(x.startswith("number,labels,title") for x in c)]
 
     def test_waits_while_dependency_is_open_then_is_taken(self):
         self.w.issues = [self.job(5, "#7")]

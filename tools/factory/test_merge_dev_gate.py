@@ -72,22 +72,23 @@ class DispatchMergeSafety(Base):
         self.assertEqual(self.state(6), "checks")
         self.assertEqual(len(self.w.merges), 1)
 
-        self.w.workflows[self.w.merge_sha] = [wf("Factory tools", "success", wid=2)]
-        self.tick(2)
         gh = self.w.gh
         other_head = "9999999999999999"
+        raced = []
 
         def mismatch(args):
             a = list(args)
             if a[:2] == ["pr", "merge"]:
+                raced.append(1)
                 raise D.Error("gh pr merge failed: exit 1: head mismatch")
-            if a[:2] == ["pr", "view"] and a[2] == "43":
+            if raced and a[:2] == ["pr", "view"] and a[2] == "43":
                 return json.dumps({"headRefOid": other_head, "state": "MERGED", "mergeable": "UNKNOWN",
                                    "comments": [], "mergeCommit": {"oid": "deadbeef12345678"}})
             return gh(a)
 
         self.w.gh = mismatch
-        self.tick()
+        self.w.workflows[self.w.merge_sha] = [wf("Factory tools", "success", wid=2)]
+        self.tick(6, fresh=True)
         data6 = json.loads(self.w.rows("SELECT data FROM jobs WHERE job='6'")[0][0])
         self.assertEqual(self.state(6), "merged")
         self.assertFalse(data6.get("own_merge"))

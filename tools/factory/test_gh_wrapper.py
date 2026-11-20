@@ -71,8 +71,8 @@ class Wrapper(unittest.TestCase):
 
     def test_any_other_failure_is_reported_as_it_is(self):
         self.app_token(time.time() + 3600)
-        p = self.run_gh("pr", "merge", "5", fails="X Pull request is not mergeable")
-        self.assertEqual((p.returncode, p.stderr.strip()), (1, "X Pull request is not mergeable"))
+        p = self.run_gh("pr", "close", "5", fails="X Pull request is not open")
+        self.assertEqual((p.returncode, p.stderr.strip()), (1, "X Pull request is not open"))
         self.assertEqual(self.calls(), ["app"])
 
     def test_input_from_a_dash_reaches_the_retry_too(self):

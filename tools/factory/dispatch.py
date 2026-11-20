@@ -463,7 +463,7 @@ def make_gh(source, run=subprocess.run, shared=None):
     get = source if callable(source) else (lambda: source)
     shared = shared or getattr(source, "shared", None)
     def once(args, token):
-        env = dict(os.environ, GH_TOKEN=token, HOME=tempfile.gettempdir(), GH_PROMPT_DISABLED="1", NO_COLOR="1")
+        env = dict(os.environ, GH_TOKEN=token, HOME=tempfile.gettempdir(), GH_PROMPT_DISABLED="1", NO_COLOR="1", FACTORY_DISPATCHER="1")
         try:
             return run(["gh"] + list(args), capture_output=True, text=True, env=env, timeout=120)
         except subprocess.TimeoutExpired:
@@ -1802,12 +1802,15 @@ class Dispatcher:
         try:
             self.gh(["pr", "merge", str(j["pr"]), "-R", self.repo, "--merge", "--match-head-commit", j["head"], "--delete-branch"])
         except Error:
-            if json.loads(self.gh(["pr", "view", str(j["pr"]), "-R", self.repo, "--json", "state"])).get("state") != "MERGED":
+            pr = json.loads(self.gh(["pr", "view", str(j["pr"]), "-R", self.repo, "--json", "state,headRefOid"]))
+            if pr.get("state") != "MERGED":
                 tries = j.get("merge_refused", 0) + 1
                 if tries < MERGE_TRIES:
                     j["merge_refused"] = tries
                     return self.save(j, "merge of #%s at %s refused (%d of %d), tried again next beat" % (j["pr"], j["head"][:7], tries, MERGE_TRIES))
                 return self.end(j, "failed", "merge of #%s at %s refused %d times" % (j["pr"], j["head"][:7], tries))
+            if pr.get("headRefOid") != j["head"]:
+                return self.end(j, "merged", "merged outside the delegator")
         j["own_merge"] = True
         self.close_earlier(j)
         self.end(j, "merged", "#%s at %s" % (j["pr"], j["head"][:7]))
@@ -1826,9 +1829,13 @@ class Dispatcher:
 
     def dev_hold(self, j):
         r = self.resolver.records(self).get("dev red")
-        if r is None or r.get("filed") == j["issue"]:
-            return None
-        return r.get("issue")
+        if r is not None:
+            return None if r.get("filed") == j["issue"] else r.get("issue")
+        dev = [x for x in self.jobs() if x.get("dev_result") in ("green", "red") and x.get("dev_since") is not None]
+        latest = max(dev, key=lambda x: x["dev_since"], default=None)
+        if latest and latest["dev_result"] == "red":
+            return latest["issue"]
+        return None
 
     def dev_healed(self, sha, failed):
         if not failed:
@@ -1858,8 +1865,9 @@ class Dispatcher:
                 self.save(j, "merge commit %s" % sha[:7])
             runs = json.loads(self.gh(["api", "repos/%s/actions/runs?head_sha=%s&per_page=100" % (self.repo, j["merge_sha"])])).get("workflow_runs") or []
             verdict, why = checks_verdict(runs)
-            failed = {r.get("workflow_id") for r in runs if r.get("conclusion") in ("failure", "timed_out")}
-            healed = self.dev_healed(j["merge_sha"], failed) if verdict == "FAIL" else None
+            passed_on_merge = {r.get("workflow_id") for r in runs if r.get("conclusion") in OK_CONCLUSIONS}
+            unproven = {r.get("workflow_id") for r in runs if r.get("workflow_id") not in passed_on_merge}
+            healed = self.dev_healed(j["merge_sha"], unproven) if verdict == "FAIL" else None
             if verdict == "OK":
                 result = "green"
             elif healed:
@@ -2255,7 +2263,8 @@ class Dispatcher:
             out["registry_error"] = type(e).__name__
             return out
         try:
-            out["label_drift"] = labelcheck.check(labelcheck.read(self.gh, self.repo), data, rows)
+            open_issues = labelcheck.read(self.gh, self.repo)
+            out["label_drift"] = labelcheck.check(open_issues, data, rows)
         except Exception as e:  # noqa: BLE001
             out["label_drift_error"] = type(e).__name__
             return out
@@ -2266,7 +2275,7 @@ class Dispatcher:
         except Exception as e:  # noqa: BLE001
             out["label_fixed_error"] = type(e).__name__
         try:
-            out["gaps_closed"] = labelcheck.close_gaps(self.gh, self.repo, self.store, out["label_drift"], data)
+            out["gaps_closed"] = labelcheck.close_gaps(self.gh, self.repo, self.store, out["label_drift"], data, open_issues)
             for f in out["gaps_closed"]:
                 log(f["issue"], "gap issue: %s, keeps #%d" % (f["did"], f["keep"]))
         except Exception as e:  # noqa: BLE001

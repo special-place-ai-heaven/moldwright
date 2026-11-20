@@ -125,13 +125,14 @@ class Station:
         return [(r["agent"], int(r["copy"])) for r in self.live().values()]
 
     def open_children(self, n):
-        raw = json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "open", "--json", "number,body",
+        raw = json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "open", "--json", "number,title,body",
                                   "--limit", str(OPEN_LIMIT)]))
         if len(raw) >= OPEN_LIMIT:
             self.log(n, "acceptance waits: the open issue list reached %d, so not every open child can be seen" % OPEN_LIMIT)
             return raw
         pattern = re.compile(r"Part of\W*#%d\b" % n)
-        return [i for i in raw if pattern.search(i.get("body") or "")]
+        gaps = re.compile(r"^Gaps of #%d\b" % n)
+        return [i for i in raw if pattern.search(i.get("body") or "") or gaps.search(i.get("title") or "")]
 
     def closed_children(self, n):
         raw = json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "closed", "--search",
@@ -250,6 +251,10 @@ class Station:
         return self.store.get_all(job)
 
     def accept(self, n, line):
+        if self.open_children(n):
+            self.store.set("accept:%d" % n, "state", "gaps")
+            self.log(n, "acceptance waits: open children or gap issues appeared while the run was in flight")
+            return
         name = self.name(n)
         self.gh(["issue", "close", str(n), "-R", self.repo, "--comment", "Accepted by %s.\n%s" % (name, line)])
         self.store.set("accept:%d" % n, "state", "accepted")
