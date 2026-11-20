@@ -52,7 +52,12 @@ type AgentRow = {
     template_id: string | null
     disabled_at: string | null
     disabled_reason: string | null
-    workspaces: { subscription_status: string | null; is_sandbox: boolean } | null
+    workspaces: {
+        subscription_status: string | null
+        is_sandbox: boolean
+        boxes_disabled_at?: string | null
+        boxes_archived_at?: string | null
+    } | null
     space: { visibility: string } | null
 }
 
@@ -186,6 +191,14 @@ describe('resolveAgentTargetForTrigger', () => {
 
     it('answers null when the workspace has no machine', async () => {
         mocks.findWorkspaceEngine.mockResolvedValue(null)
+        await expect(resolveAgentTargetForTrigger('a1')).resolves.toBeNull()
+    })
+
+    it('does not resolve a trigger target when the owning workspace has boxes disabled, archived, or subscription canceled', async () => {
+        row = { ...row!, workspaces: { subscription_status: 'active', is_sandbox: false, boxes_disabled_at: '2026-11-20T00:00:00Z', boxes_archived_at: null } }
+        await expect(resolveAgentTargetForTrigger('a1')).resolves.toBeNull()
+
+        row = { ...row!, workspaces: { subscription_status: 'canceled', is_sandbox: false, boxes_disabled_at: null, boxes_archived_at: null } }
         await expect(resolveAgentTargetForTrigger('a1')).resolves.toBeNull()
     })
 })

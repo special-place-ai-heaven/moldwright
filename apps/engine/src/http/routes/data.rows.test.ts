@@ -151,4 +151,12 @@ describe('exporting a table', () => {
         expect(JSON.parse(text)).toEqual([{ id: 2, name: 'Bob', note: 'line one\nline two' }])
         expect(text).toContain('\n  ')
     })
+
+    it('neutralizes spreadsheet formula prefixes in CSV export while keeping negative numbers intact', async () => {
+        await execute('CREATE TABLE formulas (id INTEGER PRIMARY KEY, cell TEXT, delta REAL)')
+        await execute('INSERT INTO formulas (id, cell, delta) VALUES (?, ?, ?), (?, ?, ?)', [1, '=1+1', -42.5, 2, '@SUM(A1:A2)', 10])
+        const res = await app.request(`${base}/tables/formulas/export?sort=id`)
+        expect(res.status).toBe(200)
+        expect(await res.text()).toBe(['id,cell,delta', "1,'=1+1,-42.5", "2,'@SUM(A1:A2),10"].join('\n'))
+    })
 })

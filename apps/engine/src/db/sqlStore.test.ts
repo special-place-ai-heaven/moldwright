@@ -216,6 +216,13 @@ describe('sqlStore hardening', () => {
         const counted = await queryStore(a, 'SELECT count(*) AS n FROM queue', [], 10)
         expect(Number(counted.rows[0].n)).toBe(20)
     })
+
+    it('blocks PRAGMA and _rerun_* internal tables in executeStore and queryStore', async () => {
+        const client = await getAgentDb(AGENT)
+        await expect(executeStore(client, { sql: 'PRAGMA writable_schema = ON', params: [] })).rejects.toThrow(/PRAGMA/i)
+        await expect(executeStore(client, { sql: 'DROP TABLE _rerun_views', params: [] })).rejects.toThrow(/_rerun_/i)
+        await expect(queryStore(client, 'SELECT * FROM _rerun_views', [], 10)).rejects.toThrow(/_rerun_/i)
+    })
 })
 
 describe('agentDb adapter', () => {

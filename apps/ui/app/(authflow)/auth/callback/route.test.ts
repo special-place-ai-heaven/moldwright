@@ -94,10 +94,26 @@ describe('GET /auth/callback', () => {
         expect(response.headers.get('location')).toBe('https://moldwright.robagentic.tech/auth/auth-code-error')
     })
 
-    it('sends a failed sign-in to the public host when the request reached it through the proxy', async () => {
+    it('sends a failed sign-in to the configured public host when the request reached an internal proxy', async () => {
+        vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://moldwright.robagentic.tech')
         const response = await GET(new Request('http://localhost:8080/auth/callback?error=access_denied', { headers: { 'x-forwarded-host': 'moldwright.robagentic.tech' } }))
 
         expect(response.headers.get('location')).toBe('https://moldwright.robagentic.tech/auth/auth-code-error')
+        vi.unstubAllEnvs()
+    })
+
+    it('ignores an untrusted or comma-separated x-forwarded-host header when building callback redirects', async () => {
+        vi.stubEnv('NODE_ENV', 'production')
+        vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://moldwright.robagentic.tech')
+        try {
+            const spoofed = await GET(new Request('https://internal:3000/auth/callback?code=abc', { headers: { 'x-forwarded-host': 'evil.example.com' } }))
+            expect(spoofed.headers.get('location')).toBe('https://moldwright.robagentic.tech/board')
+
+            const chained = await GET(new Request('https://internal:3000/auth/callback?code=abc', { headers: { 'x-forwarded-host': 'moldwright.robagentic.tech, evil.example.com' } }))
+            expect(chained.headers.get('location')).toBe('https://moldwright.robagentic.tech/board')
+        } finally {
+            vi.unstubAllEnvs()
+        }
     })
 
     it('signs a visitor into the account their Google identity already belongs to', async () => {

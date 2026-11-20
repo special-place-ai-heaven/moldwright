@@ -258,12 +258,10 @@ describe('buildTools', () => {
         })
     })
 
-    it('closes the agent database, with or without MCP', async () => {
-        for (const extra of [{ mcpServers: [{ name: 'linear', url: 'https://l.example/mcp' }] }, {}]) {
-            state.dbClosed.length = 0
-            const { close } = await buildTools(ctxWith(extra))
-            await close()
-            expect(state.dbClosed).toEqual(['reg-agent'])
-        }
+    it('keeps the pooled agent database open across overlapping runs when a toolset closes', async () => {
+        state.dbClosed.length = 0
+        const { close } = await buildTools(ctxWith())
+        await close()
+        expect(state.dbClosed).toEqual([])
     })
 })

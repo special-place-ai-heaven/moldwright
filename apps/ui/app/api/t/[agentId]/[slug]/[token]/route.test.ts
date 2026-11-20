@@ -185,4 +185,13 @@ describe('/api/t/[agentId]/[slug]/[token]', () => {
         expect(resolveAgentTargetForTrigger).not.toHaveBeenCalled()
         expect(fireTrigger).not.toHaveBeenCalled()
     })
+
+    it('rate-limits repeated bursts against the same trigger endpoint', async () => {
+        const statuses: number[] = []
+        for (let i = 0; i < 65; i++) {
+            const res = await POST(request(), context({ slug: 'burst-hook' }))
+            statuses.push(res.status)
+        }
+        expect(statuses).toContain(429)
+    })
 })
