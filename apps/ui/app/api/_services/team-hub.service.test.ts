@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolveAgentTarget } from '@/app/api/_services/chat.service'
 import { dispatchAccountTool } from '@/app/api/_services/mcp-account.service'
 import { getAgent } from '@/lib/engine/client'
-
+import { createServiceRoleClient } from '@/supabase/serviceRole'
+import { selectAll, selectMaybeSingle } from '@/supabase/supabase-helpers'
 import { dispatchTeamHubTool, isTeamHubTool } from './team-hub.service'
 
 vi.mock('@/app/api/_services/chat.service', () => ({ resolveAgentTarget: vi.fn() }))
 vi.mock('@/app/api/_services/mcp-account.service', () => ({ dispatchAccountTool: vi.fn() }))
 vi.mock('@/lib/engine/client', () => ({ getAgent: vi.fn() }))
+vi.mock('@/supabase/serviceRole', () => ({ createServiceRoleClient: vi.fn().mockReturnValue({}) }))
+vi.mock('@/supabase/supabase-helpers', () => ({ selectAll: vi.fn(), selectMaybeSingle: vi.fn() }))
 
 const WORKSPACE_ID = 7
 
@@ -22,6 +25,14 @@ describe('dispatchTeamHubTool', () => {
         vi.mocked(resolveAgentTarget).mockResolvedValue({ conn: { baseUrl: 'https://box', apiKey: 'k' }, engineAgentId: 'engine-auditor' } as never)
         vi.mocked(dispatchAccountTool).mockResolvedValue({ ok: true })
         callerWithTeam(true)
+        vi.mocked(selectMaybeSingle).mockImplementation(async (_db, table, _cols, filters) => {
+            const id = filters && typeof filters === 'object' && 'id' in filters && typeof filters.id === 'string' ? filters.id : undefined
+            if (table === 'agents' && id === 'auditor') return { data: { space_id: 'space-open' }, error: null } as never
+            if (table === 'agents' && id === 'a1') return { data: { space_id: 'space-open' }, error: null } as never
+            if (table === 'spaces') return { data: { visibility: 'workspace' }, error: null } as never
+            return { data: null, error: null } as never
+        })
+        vi.mocked(selectAll).mockResolvedValue({ data: [{ id: 'space-open', visibility: 'workspace' }], error: null } as never)
     })
 
     it('knows only the five read tools', () => {
@@ -56,5 +67,36 @@ describe('dispatchTeamHubTool', () => {
         vi.mocked(dispatchAccountTool).mockResolvedValue({ triggers: [{ slug: 'stripe', name: 'Stripe', url: 'https://hub/t/secret', fireCount: 3 }] })
         expect(await dispatchTeamHubTool('auditor', WORKSPACE_ID, 'team_list_triggers', { agentId: 'a1' })).toEqual({ triggers: [{ slug: 'stripe', name: 'Stripe', fireCount: 3 }] })
         expect(dispatchAccountTool).toHaveBeenCalledWith(expect.anything(), 'list_triggers', { agentId: 'a1' })
+    })
+
+    it('blocks team_get_run and team_status from reading coworkers in a different restricted box', async () => {
+        vi.mocked(selectMaybeSingle).mockImplementation(async (_db, table, _cols, filters) => {
+            const id = filters && typeof filters === 'object' && 'id' in filters && typeof filters.id === 'string' ? filters.id : undefined
+            if (table === 'agents' && id === 'auditor') return { data: { space_id: 'space-open' }, error: null } as never
+            if (table === 'agents' && id === 'secret-agent') return { data: { space_id: 'space-hr' }, error: null } as never
+            if (table === 'spaces' && id === 'space-open') return { data: { visibility: 'workspace' }, error: null } as never
+            if (table === 'spaces' && id === 'space-hr') return { data: { visibility: 'restricted' }, error: null } as never
+            return { data: null, error: null } as never
+        })
+        vi.mocked(selectAll).mockResolvedValue({
+            data: [
+                { id: 'space-open', visibility: 'workspace' },
+                { id: 'space-hr', visibility: 'restricted' },
+            ],
+            error: null,
+        } as never)
+
+        await expect(dispatchTeamHubTool('auditor', WORKSPACE_ID, 'team_get_run', { agentId: 'secret-agent', runId: 'r1' })).rejects.toThrow()
+        expect(dispatchAccountTool).not.toHaveBeenCalled()
+
+        vi.mocked(dispatchAccountTool).mockResolvedValueOnce({
+            checkedAt: '2026-11-20T00:00:00Z',
+            agents: [
+                { id: 'auditor', spaceId: 'space-open' },
+                { id: 'secret-agent', spaceId: 'space-hr' },
+            ],
+        })
+        const status = (await dispatchTeamHubTool('auditor', WORKSPACE_ID, 'team_status', {})) as { agents: Array<{ id: string }> }
+        expect(status.agents.map(a => a.id)).toEqual(['auditor'])
     })
 })

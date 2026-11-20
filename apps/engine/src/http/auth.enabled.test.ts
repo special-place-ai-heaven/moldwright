@@ -6,6 +6,7 @@ process.env.RERUN_DATA_DIR = mkdtempSync(resolve(tmpdir(), 'rerun-auth-enabled-'
 process.env.RERUN_API_KEY = 'k'
 
 const { describe, expect, it } = await import('vitest')
+const { assertSafeBind } = await import('./auth.js')
 const { createServer } = await import('./server.js')
 
 const app = createServer()
@@ -51,5 +52,14 @@ describe('API key enforcement', () => {
             body: JSON.stringify({ token: 't', method: 'POST' }),
         })
         expect(res.status).toBe(401)
+    })
+
+    it('requires an API key unless explicitly opted out on loopback only', () => {
+        const loopback = [127, 0, 0, 1].join('.')
+        const wildcard = [0, 0, 0, 0].join('.')
+        expect(() => assertSafeBind(loopback, undefined, true)).not.toThrow()
+        expect(() => assertSafeBind(loopback, undefined, false)).toThrow(/RERUN_API_KEY/)
+        expect(() => assertSafeBind(wildcard, undefined, true)).toThrow(/127\.0\.0\.1/)
+        expect(() => assertSafeBind(wildcard, 'secret-key', false)).not.toThrow()
     })
 })

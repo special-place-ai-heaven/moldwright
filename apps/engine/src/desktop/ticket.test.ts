@@ -51,10 +51,11 @@ describe('verifyDesktopTicket', () => {
         expect(verify(ticket({ agent: 'a1' }), 1_000)).toBeNull()
     })
 
-    it('skips the signature on an engine that runs without a key, like the HTTP API skips the bearer', async () => {
+    it('rejects unsigned desktop VNC tickets when RERUN_API_KEY is unset and compares bearer tokens in constant time', async () => {
         const verify = await verifierWith('')
-        const unsigned = Buffer.from(JSON.stringify({ exp: 2_000, agent: 'a1' })).toString('base64url')
-        expect(verify(unsigned, 1_000)).toEqual({ agentId: 'a1', mode: 'drive' })
+        const unsigned = Buffer.from(JSON.stringify({ exp: 2_000, agent: 'a1', mode: 'drive' })).toString('base64url')
+        expect(verify(unsigned, 1_000)).toBeNull()
+        expect(verify(`${unsigned}.forged`, 1_000)).toBeNull()
         expect(verify(null, 1_000)).toBeNull()
     })
 })

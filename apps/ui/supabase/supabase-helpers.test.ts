@@ -7,14 +7,16 @@ import { selectAll, selectCount, selectMany, selectMaybeSingle, selectSingle } f
 const filtersOf = (calls: readonly SupabaseCall[]) => calls.filter(call => !['from', 'select', 'single', 'maybeSingle'].includes(call.method)).map(call => [call.method, ...call.args])
 
 describe('filters', () => {
-    it('turns a plain value into eq, an array into in, and skips undefined', async () => {
+    it('turns a plain value into eq, an array into in, and rejects explicit undefined or NaN filter values', async () => {
         const db = fakeSupabase()
-        await selectMany(db.client, 'agents', ['id'] as const, { workspace_id: 3, id: ['a', 'b'], name: undefined })
+        await selectMany(db.client, 'agents', ['id'] as const, { workspace_id: 3, id: ['a', 'b'] })
 
         expect(filtersOf(db.chains[0])).toEqual([
             ['eq', 'workspace_id', 3],
             ['in', 'id', ['a', 'b']],
         ])
+        expect(() => selectMany(db.client, 'agents', ['id'] as const, { workspace_id: undefined })).toThrow(/undefined/)
+        expect(() => selectMany(db.client, 'agents', ['id'] as const, { workspace_id: Number.NaN })).toThrow(/NaN/)
     })
 
     it('maps each operator object onto its PostgREST method', async () => {

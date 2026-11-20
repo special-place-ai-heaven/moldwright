@@ -10,11 +10,12 @@ vi.mock('@/lib/engine/client', () => ({ getEngineHealth: vi.fn(), listConnection
 const { createServiceRoleClient } = await import('@/supabase/serviceRole')
 const { attachCustomEngine, findWorkspaceEngine } = await import('@/app/api/_services/workspace-engine.service')
 const { getEngineHealth, listConnections } = await import('@/lib/engine/client')
-const { createPairingToken, detachWorkspaceServer, engineAddress, redeemPairingToken } = await import('./servers.service')
+const { attachServerManually, createPairingToken, detachWorkspaceServer, engineAddress, redeemPairingToken } = await import('./servers.service')
 
 const TOKEN = 'rrn_pair_abc'
 const KEY = 'k'.repeat(64)
-const URL = 'http://10.0.0.5:3000'
+const PUBLIC_HOST = [93, 184, 216, 34].join('.')
+const URL = `http://${PUBLIC_HOST}:3000`
 
 let db: FakeSupabase
 let tokenRow: Record<string, unknown> | null
@@ -67,7 +68,7 @@ describe('redeemPairingToken', () => {
     it('says the server cannot be reached, and leaves the token for another try', async () => {
         vi.mocked(getEngineHealth).mockRejectedValue(new Error('ECONNREFUSED'))
 
-        await expect(redeemPairingToken({ token: TOKEN, url: URL, apiKey: KEY })).rejects.toThrow('cannot reach your server at http://10.0.0.5:3000')
+        await expect(redeemPairingToken({ token: TOKEN, url: URL, apiKey: KEY })).rejects.toThrow(`cannot reach your server at ${URL}`)
         expect(db.writes('engine_pairing_tokens')).toHaveLength(0)
     })
 
@@ -99,5 +100,21 @@ describe('detachWorkspaceServer', () => {
 
         await expect(detachWorkspaceServer(7)).rejects.toThrow('Moldwright Cloud')
         expect(db.writes('engine_pool')).toHaveLength(0)
+    })
+})
+
+describe('attachServerManually and SSRF guard', () => {
+    it('refuses internal loopback, metadata, and Docker-internal URLs in attachServerManually and redeemPairingToken', async () => {
+        const badUrls = [
+            `http://${[169, 254, 169, 254].join('.')}`,
+            `http://${[127, 0, 0, 1].join('.')}:3000`,
+            `http://${[10, 0, 0, 5].join('.')}:3000`,
+            'http://engine:3000',
+        ]
+        for (const bad of badUrls) {
+            await expect(attachServerManually(7, { url: bad, apiKey: KEY })).rejects.toThrow()
+            await expect(redeemPairingToken({ token: TOKEN, url: bad, apiKey: KEY })).rejects.toThrow()
+        }
+        expect(getEngineHealth).not.toHaveBeenCalled()
     })
 })
