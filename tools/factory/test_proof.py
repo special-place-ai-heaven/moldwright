@@ -37,12 +37,40 @@ class Asks(unittest.TestCase):
     def test_reads_all_sections(self):
         self.assertEqual(
             proof.asks(BODY),
-            ["first ask,", "second ask", "a correction", "Done-test", "cd a && run1", "cd b && run2"],
+            [
+                "first ask,",
+                "second ask",
+                "a correction",
+                "Done-test: one, written first: it fails on dev's code and passes at this commit",
+                "Done-test: two, written first: it fails on dev's code and passes at this commit",
+                "cd a && run1",
+                "cd b && run2",
+            ],
         )
 
     def test_empty(self):
         self.assertEqual(proof.asks("no sections here\n- a bullet"), [])
         self.assertEqual(proof.asks(None), [])
+
+    def test_a_done_test_heading_without_a_bullet_is_a_plan_ask(self):
+        self.assertEqual(
+            proof.asks("**Done-test**\n**Run**\n"),
+            ["Done-test: the issue names no done-test under its Done-test heading"],
+        )
+        self.assertEqual(
+            proof.asks("**Change**\n- a\n**Done-test**\n**Depends on**: none\n**Run**\n```\ncmd\n```\n"),
+            ["a", "Done-test: the issue names no done-test under its Done-test heading", "cmd"],
+        )
+        self.assertEqual(
+            proof.asks("**Change**\n- a\n**Done-test**\n"),
+            ["a", "Done-test: the issue names no done-test under its Done-test heading"],
+        )
+
+    def test_a_done_test_bullet_is_an_ask_with_its_text(self):
+        self.assertEqual(
+            proof.asks("**Done-test** (written first and seen failing)\n- `test_x` in `a/test_b.py`.\n"),
+            ["Done-test: `test_x` in `a/test_b.py`., written first: it fails on dev's code and passes at this commit"],
+        )
 
 
 class Judge(unittest.TestCase):

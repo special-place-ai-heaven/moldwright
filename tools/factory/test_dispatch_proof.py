@@ -74,7 +74,9 @@ class Proof(ProofBase):
         self.assertEqual(self.state(), "proving")
         agent, msg, _ = self.w.sends[-1]
         self.assertEqual(agent, "r2")
-        for want in ("ASK 1: first ask", "ASK 2: second ask", "ASK 3: Done-test", "ASK 4: cd a && run1", "ASK 5: cd b && run2",
+        for want in ("ASK 1: first ask", "ASK 2: second ask",
+                     "ASK 3: Done-test: t, written first: it fails on dev's code and passes at this commit",
+                     "ASK 4: cd a && run1", "ASK 5: cd b && run2",
                      "PROOF: PASS @<first 7 characters of the commit>"):
             self.assertIn(want, msg)
         self.assertNotIn("ASK 6", msg)

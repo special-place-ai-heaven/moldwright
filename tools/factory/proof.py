@@ -36,23 +36,28 @@ def evidence(out, count):
 
 
 def asks(body):
-    out, kind, fenced, done = [], None, False, False
+    out, kind, fenced, done, seen = [], None, False, False, False
     for line in plain(body).split("\n"):
-        m = re.match(r"^\*\*([A-Za-z-]+)\*\*", line)
+        m = re.match(r"^\*\*([^*]+)\*\*", line)
         if m and not fenced:
+            if kind == "done" and not seen:
+                out.append("Done-test: the issue names no done-test under its Done-test heading")
             kind = HEADINGS.get(m.group(1).lower())
-            done = False
-            if kind == "done":
-                out.append("Done-test")
+            done, seen = False, False
             continue
         if kind == "change" and re.match(r"^[-*] \S", line):
             out.append(line[2:].strip())
+        elif kind == "done" and re.match(r"^[-*] \S", line):
+            out.append("Done-test: %s, written first: it fails on dev's code and passes at this commit" % line[2:].strip())
+            seen = True
         elif kind == "run":
             if line.startswith("```"):
                 fenced = not fenced
                 done = done or not fenced
             elif fenced and line.strip() and not done:
                 out.append(line.strip())
+    if kind == "done" and not seen:
+        out.append("Done-test: the issue names no done-test under its Done-test heading")
     for line in plain(body).split("\n"):
         m = THROUGH.match(line)
         if m and m.group(1).strip():
