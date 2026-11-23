@@ -1887,6 +1887,16 @@ class Dispatcher:
             elif healed:
                 result, why = "green", "dev green again at %s, a later commit that contains this merge" % healed[:7]
                 j["dev_healed_by"] = healed
+            elif verdict == "FAIL" and "dev_rerun" not in j:
+                for r in runs:
+                    if r.get("conclusion") in ("failure", "timed_out") and r.get("id") is not None:
+                        try:
+                            self.gh(["run", "rerun", str(r["id"]), "--failed", "-R", self.repo])
+                        except Error as e:
+                            log(j["issue"], "dev rerun of run %s failed: %s" % (r["id"], e))
+                j["dev_rerun"] = True
+                self.save(j, "dev rerun of the failed runs at %s" % j["merge_sha"][:7])
+                continue
             elif verdict == "FAIL":
                 result = "red"
             elif j.get("dev_result") == "red":

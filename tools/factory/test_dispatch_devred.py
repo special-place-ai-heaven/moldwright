@@ -72,7 +72,7 @@ class DevRed(Base):
         self.to_checks()
         self.w.workflows[HEAD] = [wf("ci", "success")]
         self.w.workflows[SHA] = [wf("Factory tools", "failure", wid=2)]
-        self.tick(2)
+        self.tick(3)
         self.assertEqual(self.state(5), "merged")
 
     def second_to_checks(self):

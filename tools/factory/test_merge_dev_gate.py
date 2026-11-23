@@ -78,9 +78,10 @@ class DispatchMergeAndHold(Base):
         self.d = self.new()
         self.d.save({"issue": 1, "title": "A", "body": "Fix\n", "state": "merged", "own_merge": True,
                      "pr": 41, "head": HEAD, "merge_sha": SHA, "dev_since": 900.0}, "seeded")
+        self.w.workflows[SHA] = [wf("Factory tools", "failure", wid=2)]
+        self.tick()
         self.d.save({"issue": 2, "title": "B", "body": "Fix\n", "state": "checks", "pr": 42,
                      "head": HEAD, "checks_since": 950.0, "round": 1, "worker": "coder"}, "seeded")
-        self.w.workflows[SHA] = [wf("Factory tools", "failure", wid=2)]
         self.w.workflows[HEAD] = [wf("ci", "success", wid=1)]
         self.tick()
         self.assertEqual(self.d.store.get_job("1")["dev_result"], "red")
