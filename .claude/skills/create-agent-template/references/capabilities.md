@@ -36,6 +36,8 @@ Recommended **off** if everything is done through an official connector, the web
 
 ## Grid: paid data
 
+Billing is off on this build (`BILLING_ENABLED = false` in `apps/ui/cloud-oss/billing.ts`) and `/api/paid-data` tells the engine paid data is disabled, so recommend paid data **off** and build the method on the free web, connectors and files. The grid below applies only to a host where billing is on.
+
 Groups: `people` (prospects, work emails and phones), `companies` (search and enrichment), `search` (Google results, Google Maps, local businesses), `seo` (volumes, keyword ideas, backlinks, authority), `linkedin`, `tiktok`, `instagram`, `x`, `youtube`, `facebook`, `reddit` (public profiles, posts, comments, reactions).
 
 Recommended **on** if the deliverable relies on **structured public data in volume**: finding leads or their emails, enriching companies, listing local businesses, measuring keywords, reading a network's posts / accounts / trends, analyzing competitors.

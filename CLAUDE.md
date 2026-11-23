@@ -4,9 +4,7 @@
 
 Write self-explanatory code instead of comments. Names of variables, functions, and types should make intent clear without explanation.
 
-Do not add comments in most cases. Only add a comment when it genuinely helps: clarifying an ambiguous type, documenting a non-obvious reason for doing something, or explaining a subtle edge case that the code alone cannot convey.
-
-Never add comments that just restate what the code does.
+Add no comments to code. A reason worth keeping (a non-obvious decision, a subtle edge case, an ambiguous type) goes in the feature's doc. Machine directives (lint and formatter directives, `@ts-expect-error`) and legal notices stay.
 
 ## Shared helpers
 

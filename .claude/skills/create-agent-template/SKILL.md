@@ -40,7 +40,7 @@ Before any question, I prepare my recommendations (details: `references/intervie
 
 - I reduce the topic to **one hero deliverable** (the object produced: a 7-slide carousel, a list of 50 qualified leads, a swipe file of ads), an **audience** (the template's category), a likely **trigger**, and where the job **lands** (file, app, site);
 - `search_connectors` **one capability at a time** (what it reads, what it does, where it writes), short queries, then `list_connectors` by category before concluding there is nothing;
-- I decide whether **paid data** is useful (which groups) and whether **computer use** is useful (a site with no official connector on the deliverable's path), grid in `references/capabilities.md`;
+- I decide whether **paid data** is useful (which groups; off while billing is off on this build) and whether **computer use** is useful (a site with no official connector on the deliverable's path), grid in `references/capabilities.md`;
 - I pick the bench's **fictional owner**: a real small business in the niche, with its site and its country, never `example.com`.
 
 ## Phase 2: Interview in blocks
