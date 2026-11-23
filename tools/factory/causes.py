@@ -114,6 +114,8 @@ def brief(repo, events, records, back):
         "- A change to text or settings that live in the repository is a child issue in the cut format, "
         "labelled `factory` and `P0`, with the line `**Cause**: <group>`, and it says in its Change to add no comments in code.",
         "- Before filing, git grep the test files for every function, constant and message the Change alters; each test whose assertion the change breaks goes into Files, with its own Change bullet.",
+        "- Before filing, search the issues of the repository for the line `**Cause**: <group>` of each group; when an open issue already carries it, file nothing for that group and give that issue as its CHANGE. "
+        "When no open issue carries it, file the change as these rules say.",
         "- One Change bullet per branch: a fallback, an else or an error exit of a rule is its own bullet, written out in full, never as \"the same rule\".",
         "- A change to a coworker's own instructions is an issue labelled `instructions`, in the form of #1079.",
         "- Every change is measured before and after and reverted when it does not help.",

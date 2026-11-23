@@ -92,6 +92,10 @@ class Brief(unittest.TestCase):
     def test_the_brief_asks_for_one_change_bullet_per_branch(self):
         self.assertIn("One Change bullet per branch", self.text.split("Filing rules:")[1])
 
+    def test_the_filing_rules_look_for_an_open_issue_of_the_same_group(self):
+        self.assertIn("when an open issue already carries it, file nothing for that group", self.text.split("Filing rules:")[1])
+        self.assertIn("When no open issue carries it, file the change as these rules say.", self.text)
+
     def test_the_brief_says_where_each_kind_of_change_is_filed(self):
         self.assertIn("**Cause**: <group>", self.text)
         self.assertIn("`factory`", self.text)
