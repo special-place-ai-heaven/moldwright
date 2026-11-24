@@ -1703,6 +1703,8 @@ class Dispatcher:
             return
         if st == "queued" and proven_line(j.get("body")):
             if self.take(j):
+                if self.recheck_first(j):
+                    return
                 self.open_proven(j, proven_line(j.get("body")))
             return
         if st == "queued":

@@ -1,3 +1,5 @@
+import json
+
 import dispatch as D
 import factory
 import planning
@@ -177,3 +179,41 @@ class ProvenTest(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+PROVEN_BODY = """PLAN READY (cut of #5; facts read on dev 1234567)
+**Proven branch**: plan/5
+**Depends on**: none
+**Worker**: coder
+**Files**
+- `a/b.py`
+- `a/test_b.py`
+**Test file**: `a/test_b.py`
+**Change**
+- `do_it()` in a/b.py takes a limit
+"""
+TOUCHED = {"count": 1, "files": [{"filename": "a/b.py", "status": "modified", "patch": "@@ -1 +1 @@\n-def do_it():\n+def do_it(limit):"}]}
+
+
+class ProvenRecheck(Base):
+    def setUp(self):
+        super().setUp()
+        self.w.issues = [{"number": 5, "title": "Fix x", "body": PROVEN_BODY, "comments": []}]
+        self.w.branches = {"plan/5": "sha5aaaaaaaaaaa"}
+        self.cfg["planning"] = {"recheck": {"tries": 1}}
+
+    def new(self):
+        def gh(args):
+            if args[0] == "api" and "/compare/" in args[1] and "--jq" in args and "$want" in args[args.index("--jq") + 1]:
+                return json.dumps(TOUCHED)
+            return self.w.gh(args)
+        return D.Dispatcher(self.cfg, self.w.account, gh, now=lambda: self.w.clock)
+
+    def test_a_proven_job_whose_files_changed_on_dev_gets_a_fact_recheck_first(self):
+        self.d = self.new()
+        self.tick()
+        self.assertEqual(self.state(), "waiting")
+        job = self.d.store.get_job("5")
+        self.assertEqual((job["rechecks"], job["recheck"]["from"]), (1, "1234567"))
+        self.assertFalse([c for c in self.w.gh_calls if c[:2] == ["pr", "create"]])
+        self.assertFalse([c for c in self.w.gh_calls if "git/refs" in " ".join(c) and "POST" in c])
