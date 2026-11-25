@@ -74,7 +74,7 @@ class Escapes(Base):
         self.w.issues = []
         self.tick(25)
         self.assertEqual(self.w.rows("SELECT k FROM kv WHERE job='escaped'"), [])
-        self.assertNotIn(["issue", "list", "-R", "o/r", "--state", "open", "--json", "number", "--limit", "1000"], self.w.gh_calls)
+        self.assertFalse(any("repos/o/r/issues?state=open&per_page=100" in call for call in self.w.gh_calls))
 
 
 if __name__ == "__main__":

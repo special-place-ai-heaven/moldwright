@@ -164,6 +164,9 @@ class World:
     def gh(self, args):
         a = list(args)
         self.gh_calls.append(a)
+        if a[:2] == ["api", "repos/o/r/issues?state=open&per_page=100"]:
+            numbers = sorted(self.open_numbers, reverse=True)
+            return "\n".join(map(str, numbers if "--paginate" in a else numbers[:100]))
         timeline = a[:2] == ["api", "graphql"] and any("UNLABELED_EVENT" in x for x in a)
         gone = a[0] == "issue" and len(a) > 2 and a[2].isdigit() and int(a[2]) in self.deleted
         if a[:2] == ["issue", "create"] or "factory-problem" in a or (a[0] == "issue" and self.problem(a)) or timeline or gone:

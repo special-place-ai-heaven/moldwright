@@ -2526,7 +2526,9 @@ class Dispatcher:
                 merged.append(j)
         if not merged:
             return
-        open_numbers = {int(i["number"]) for i in json.loads(self.gh(["issue", "list", "-R", self.repo, "--state", "open", "--json", "number", "--limit", "1000"]) or "[]")}
+        numbers = self.gh(["api", "repos/%s/issues?state=open&per_page=100" % self.repo, "--paginate",
+                           "--jq", ".[] | select(.pull_request == null) | .number"])
+        open_numbers = {int(n) for n in numbers.splitlines()}
         records = self.resolver.records(self)
         for n, by in escapes.find(merged, open_numbers, records, now):
             if escapes.record(self.store, n, by, now):
