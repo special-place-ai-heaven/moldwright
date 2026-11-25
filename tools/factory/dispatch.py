@@ -2136,6 +2136,37 @@ class Dispatcher:
         passed = {r.get("workflow_id") for r in runs if r.get("conclusion") == "success" and r.get("workflow_id") is not None}
         return head if checks_verdict(runs)[0] == "OK" and failed <= passed else None
 
+    def red_before(self, sha, failed):
+        if not failed or None in failed:
+            return None
+        try:
+            parent = self.gh(["api", "repos/%s/commits/%s" % (self.repo, sha), "--jq", ".parents[0].sha"]).strip()
+            if not parent:
+                return None
+            url = f"repos/{self.repo}/actions/runs?head_sha={parent}&event=push&branch=dev&per_page=100"
+            page = json.loads(self.gh(["api", url]))
+            runs = page["workflow_runs"]
+            if page["total_count"] != len(runs):
+                return None  # An unseen run could supersede a failure.
+            latest = {}
+            for r in runs:
+                if (r["event"], r["head_branch"], r["head_sha"]) != ("push", "dev", parent):
+                    continue
+                wid = r["workflow_id"]
+                if wid not in failed:
+                    continue
+                order = (r["run_number"], r["run_attempt"])
+                if not all(type(n) is int and n > 0 for n in order):
+                    return None
+                red = r["status"] == "completed" and r["conclusion"] in ("failure", "timed_out")
+                if wid not in latest or order > latest[wid][0]:
+                    latest[wid] = (order, red)
+                elif order == latest[wid][0]:
+                    latest[wid] = (order, latest[wid][1] and red)
+            return parent if failed == latest.keys() and all(red for _, red in latest.values()) else None
+        except (Error, ValueError, KeyError, TypeError, IndexError, AttributeError):
+            return None
+
     def dev_results(self):
         for j in self.jobs():
             if j["state"] != "merged" or not j.get("own_merge") or j.get("dev_result") in ("green", "unproved"):
@@ -2149,6 +2180,7 @@ class Dispatcher:
             runs = json.loads(self.gh(["api", "repos/%s/actions/runs?head_sha=%s&per_page=100" % (self.repo, j["merge_sha"])])).get("workflow_runs") or []
             verdict, why = checks_verdict(runs)
             passed_on_merge = {r.get("workflow_id") for r in runs if r.get("conclusion") in OK_CONCLUSIONS}
+            failed = {r.get("workflow_id") for r in runs if r.get("conclusion") in ("failure", "timed_out")}
             unproven = {r.get("workflow_id") for r in runs if r.get("workflow_id") not in passed_on_merge}
             healed = self.dev_healed(j["merge_sha"], unproven) if verdict == "FAIL" else None
             if verdict == "OK":
@@ -2156,6 +2188,8 @@ class Dispatcher:
             elif healed:
                 result, why = "green", "dev green again at %s, a later commit that contains this merge" % healed[:7]
                 j["dev_healed_by"] = healed
+            elif verdict == "FAIL" and (parent := self.red_before(j["merge_sha"], failed)):
+                result, why = "unproved", "dev was already red at %s before this merge: %s" % (parent[:7], why)
             elif verdict == "FAIL" and "dev_rerun" not in j:
                 for r in runs:
                     if r.get("conclusion") in ("failure", "timed_out") and r.get("id") is not None:

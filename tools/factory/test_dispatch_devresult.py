@@ -8,6 +8,12 @@ import dispatch as D
 from test_dispatch import Base, HEAD, wf
 
 SHA = "feedface12345678"
+PARENT = "beef000011112222"
+
+
+def parent_run(conclusion, number, **extra):
+    run = dict(wf("ci", conclusion), head_sha=PARENT, head_branch="dev", event="push", run_number=number, run_attempt=1)
+    return {**run, **extra}
 
 
 class DevResult(Base):
@@ -53,6 +59,59 @@ class DevResult(Base):
         self.tick(3)
         self.assertEqual(self.data()["dev_result"], "red")
         self.assertIn("Factory tools", self.data()["dev_why"])
+
+    def with_parent_runs(self, runs, count=None):
+        gh = self.w.gh
+
+        def read(args):
+            if args == ["api", "repos/o/r/commits/" + SHA, "--jq", ".parents[0].sha"]:
+                return PARENT
+            if args[0] == "api" and f"/actions/runs?head_sha={PARENT}&" in args[1]:
+                return json.dumps({"total_count": len(runs) if count is None else count, "workflow_runs": runs})
+            return gh(args)
+
+        self.w.gh = read
+        self.merged()
+        self.w.workflows[SHA] = [dict(wf("ci", "failure", wid=1), id=77)]
+
+    def test_a_failure_that_was_already_on_the_parent_is_unproved_not_red(self):
+        self.with_parent_runs([parent_run("timed_out", 2), parent_run("success", 1),
+                               parent_run("success", 3, event="pull_request")])
+        self.tick(3)
+        self.assertEqual(self.data()["dev_result"], "unproved")
+        self.assertIn("dev was already red at beef000", self.data()["dev_why"])
+        self.assertFalse(any(c[:2] == ["run", "rerun"] for c in self.w.gh_calls))
+
+    def test_a_failure_that_the_parent_did_not_have_is_still_red(self):
+        self.assert_normal_rerun([parent_run("success", 1), parent_run("failure", 1, workflow_id=2)])
+
+    def assert_normal_rerun(self, runs, count=None):
+        self.with_parent_runs(runs, count)
+        self.tick(3)
+        self.assertEqual(self.data()["dev_result"], "red")
+        self.assertEqual(self.w.reruns, [["run", "rerun", "77", "--failed", "-R", "o/r"]])
+
+    def test_recovered_parent_oldest_first(self):
+        self.assert_normal_rerun([parent_run("failure", 1), parent_run("success", 2)])
+
+    def test_recovered_parent_newest_first(self):
+        self.assert_normal_rerun([parent_run("success", 2), parent_run("failure", 1)])
+
+    def test_recovered_parent_on_a_later_attempt(self):
+        self.assert_normal_rerun([parent_run("success", 1, run_attempt=2), parent_run("failure", 1)])
+
+    def test_non_dev_pushes_and_pull_requests_are_not_parent_evidence(self):
+        self.assert_normal_rerun([parent_run("failure", 2, event="pull_request"),
+                                  parent_run("failure", 3, head_branch="topic")])
+
+    def test_conflicting_latest_parent_attempts_are_not_evidence(self):
+        self.assert_normal_rerun([parent_run("failure", 1), parent_run("success", 1)])
+
+    def test_unfinished_latest_parent_run_is_not_evidence(self):
+        self.assert_normal_rerun([parent_run("failure", 1), parent_run(None, 2, status="in_progress")])
+
+    def test_incomplete_parent_page_is_not_evidence(self):
+        self.assert_normal_rerun([parent_run("failure", 1)], count=101)
 
     def test_a_first_failed_push_run_is_run_again_and_not_red(self):
         self.merged()
