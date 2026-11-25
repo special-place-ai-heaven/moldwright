@@ -286,6 +286,9 @@ def replan_brief(j, repo, n):
         'Do three things:',
         '1. Read the issue against today\'s dev in a throwaway checkout.',
         '2. Rewrite each bullet of **Change**, **Files**, **Done-test** and **Run** that no longer holds where it stands, so no bullet a correction voids is left: the prover gets every **Change** and **Corrections** bullet as an ask. Then add a `**Corrections**` block to the issue with one `- ` bullet per rewrite, and run each changed Run line once. A new or changed Run line is written inside the `**Run**` block itself, not only in Corrections: the red-before-green check reads only that block. Before you save the body, run `python3 -I tools/factory/issuecheck.py <file>` from the root of the throwaway checkout and save only when it prints OK. When the issue has a **Proven branch** line and you change Files or Change, take that line out: you cannot push the branch again, and the builder starts from today\'s dev.',
+        '''   Before saving, run `python3 -I -c "import sys; sys.path.insert(0, 'tools/factory'); import proof; print(*proof.asks(open(sys.argv[1], encoding='utf-8').read()), sep=chr(10))" <file>` from the same root.''',
+        '   Save only when every **Change** and **Corrections** bullet appears as one whole ask. '
+        "If a bullet is missing or cut, put the Corrections block on its own lines between the last **Change** bullet and the next heading, never by replacing the first match of a heading's text. Print the asks again before saving.",
         '3. Put the issue back in the queue: `/data/tools/bin/gh issue edit %s -R %s --add-label factory --remove-label factory-blocked`' % (j["issue"], repo),
         '',
         'If the reason is not true on today\'s dev, say so in a comment and relabel unchanged.',
