@@ -14,6 +14,14 @@ const CODE = 'analyze_file_impact ask batch_edit batch_insert batch_rename check
 const TERMINAL = 'audit_since bucket_events_since bucket_summary bucket_wait command_output_tail command_start_combed command_status command_stop run_and_watch shell_exec health'.split(' ').map(name => ({ name, tokens: 1 }))
 
 describe('groupTools', () => {
+    it('puts other-prefixed tools and singletons in one other group in server order', () => {
+        const list = ['other_one', 'search_a', 'health', 'other_two', 'search_b', 'solo_read'].map(name => ({ name }))
+        expect(groupTools(list)).toEqual([
+            { group: 'search', tools: [list[1], list[4]] },
+            { group: 'other', tools: [list[0], list[2], list[3], list[5]] },
+        ])
+    })
+
     it('groups by the word before the first underscore, single tools last under other', () => {
         expect(groupTools(tools).map(g => [g.group, g.tools.map(t => t.name)])).toEqual([
             ['search', ['search_symbols', 'search_text']],

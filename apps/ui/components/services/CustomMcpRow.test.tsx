@@ -46,6 +46,11 @@ describe('CustomMcpRow', () => {
         expect(text).toContain('status.noAnswer')
     })
 
+    it.each(['error', 'config_error'] as const)('shows the no-answer text for an empty %s message', async status => {
+        const text = await render({ name: 'x', status, toolCount: 0, error: '' })
+        expect(text).toContain('status.noAnswer')
+    })
+
     it.each(['connected', 'needs_auth'] as const)('shows no error line for a %s server', async state => {
         const text = await render({ name: 'x', status: state, toolCount: 1 })
         expect(text).not.toContain('status.checkedAt')

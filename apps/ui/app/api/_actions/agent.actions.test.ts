@@ -44,6 +44,8 @@ vi.mock('@/lib/engine/client', () => ({
     createSkill: vi.fn(async () => ({ slug: 'skill' })),
     deleteSchedule: vi.fn(),
     listSkills: vi.fn(async () => []),
+    listMcpServerTools: vi.fn(),
+    getAgentToolList: vi.fn(),
     runScheduleNow: vi.fn(async () => ({ runId: 'run-1', sessionId: 'es-1' })),
     patchAgent: vi.fn(),
     updateAgentKeys: vi.fn(),
@@ -127,6 +129,28 @@ describe('the level each action asks of the Box', () => {
 
         expect(mocks.moveAgentToBox).toHaveBeenCalledWith(agentId, spaceId, MEMBER, undefined)
         expect(mocks.duplicateAgent).toHaveBeenCalledWith(expect.objectContaining({ actor: MEMBER, agentRowId: agentId, workspaceId: 7, spaceId }))
+    })
+})
+
+describe('coworker tool lists', () => {
+    it('reads the named server and the coworker tool list from the resolved engine agent', async () => {
+        const server = { name: 'docs', tools: [], picks: [] }
+        const coworker = { families: [], promptTokens: 12 }
+        vi.mocked(engine.listMcpServerTools).mockResolvedValueOnce(server)
+        vi.mocked(engine.getAgentToolList).mockResolvedValueOnce(coworker)
+
+        await expect(actions.listAgentMcpServerToolsAction(AGENT, 'docs')).resolves.toEqual(server)
+        await expect(actions.getAgentToolListAction(AGENT)).resolves.toEqual(coworker)
+        expect(engine.listMcpServerTools).toHaveBeenCalledWith(conn, 'engine-1', 'docs')
+        expect(engine.getAgentToolList).toHaveBeenCalledWith(conn, 'engine-1')
+    })
+
+    it('returns null for each list when the engine read fails', async () => {
+        vi.mocked(engine.listMcpServerTools).mockRejectedValueOnce(new Error('offline'))
+        vi.mocked(engine.getAgentToolList).mockRejectedValueOnce(new Error('offline'))
+
+        await expect(actions.listAgentMcpServerToolsAction(AGENT, 'docs')).resolves.toBeNull()
+        await expect(actions.getAgentToolListAction(AGENT)).resolves.toBeNull()
     })
 })
 
