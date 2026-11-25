@@ -56,6 +56,7 @@ vi.mock('@/stores/board.store', () => ({
 }))
 vi.mock('@/supabase/session/SessionProvider', () => ({ useSession: () => ({ workspace: mocks.workspace }) }))
 
+import { toast } from 'sonner'
 import { FACTORY_OVERLAY_BELOW, SIDE_PANEL_GAP, loadSidePanelWidth } from '@/lib/side-panel-width'
 import { FactoryPage } from './FactoryPage'
 
@@ -185,6 +186,66 @@ describe('factory page', () => {
             await flush()
             expect(pill().dataset.statePill).toBe('STOPPED')
         } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('Stop and Start: busy while sent, the ask pulses until the factory reports it, a failed send frees the controls', async () => {
+        vi.useFakeTimers({ toFake: ['setInterval'] })
+        const failed = vi.spyOn(toast, 'error').mockImplementation(() => '')
+        try {
+            const base = snapshotWith([])
+            const order = { id: 'o1', repo: 'o/r', kind: 'issue' as const, issues: [42], text: '', status: 'active' as const, action: null, created_at: iso(NOW - 5000), cancelled_at: null }
+            const report = async (state: string, at: number, jobs: unknown[] = []) => {
+                mocks.answer = { ...base, snapshot: { ...base.snapshot, jobs, control: { state, at: iso(at), by: 'owner' } } }
+                await act(async () => { vi.advanceTimersByTime(30_000) })
+                await flush()
+            }
+            mocks.answer = { ...base, snapshot: { ...base.snapshot, jobs: [job(42, { state: 'queued' })], control: { state: 'RUNNING', at: iso(NOW - 60_000), by: 'owner' } } }
+            mocks.controls = { isOwner: true, activeRepo: 'o/r', state: 'RUNNING', stateAt: iso(NOW - 61_000), providersOff: [], throttle: null, projectLimits: null, orders: [order] }
+            await mount()
+            const pill = () => host.querySelector<HTMLElement>('[data-state-pill]')!
+            const busy = () => host.querySelector('[role="group"][aria-busy]')!.getAttribute('aria-busy')
+            const locked = () => Array.from(host.querySelectorAll<HTMLButtonElement>('[data-state-button], [data-more-controls]')).map(b => b.disabled)
+            const loader = () => (world() as unknown as { scene: (t: number, now: number) => { tiles: { id: string; style: { status?: { labelKey?: string } } }[] } })
+                .scene(0, Date.now()).tiles.find(t => t.id === 'Delegator')!.style.status?.labelKey
+            const press = (state: string) => act(async () => { host.querySelector<HTMLButtonElement>(`[data-state-button="${state}"]`)!.click() })
+            expect(loader()).toBe('working')
+
+            let land!: () => void
+            mocks.setState.mockImplementationOnce(state => new Promise(done => { land = () => { mocks.controls = { ...mocks.controls!, state, stateAt: iso(NOW) }; done({ ok: true }) } }))
+            await press('DRAINING')
+            expect(busy()).toBe('true')
+            expect(locked()).toEqual([true, true, true, true, true])
+            await act(async () => { land() })
+            await flush()
+            expect(busy()).toBe('false')
+            expect(locked()).toEqual([false, false, false, false, false])
+            expect(pill().dataset.statePill).toBe('asked')
+            expect(pill().querySelector('.animate-pulse')).not.toBeNull()
+
+            await report('STOPPED', NOW)
+            expect(pill().dataset.statePill).toBe('STOPPED')
+            expect(pill().querySelector('.animate-pulse')).toBeNull()
+            expect(loader()).toBeUndefined()
+
+            mocks.setState.mockRejectedValueOnce(new Error('offline'))
+            await press('RUNNING')
+            await flush()
+            expect(failed).toHaveBeenCalledOnce()
+            expect(busy()).toBe('false')
+            expect(locked()).toEqual([false, false, false, false, false])
+            expect(pill().dataset.statePill).toBe('STOPPED')
+
+            await press('RUNNING')
+            await flush()
+            expect(mocks.setState).toHaveBeenLastCalledWith('RUNNING')
+            expect(pill().dataset.statePill).toBe('asked')
+            await report('RUNNING', NOW + 1000)
+            expect(pill().dataset.statePill).toBe('RUNNING')
+            expect(pill().querySelector('.animate-pulse')).toBeNull()
+        } finally {
+            failed.mockRestore()
             vi.useRealTimers()
         }
     })
