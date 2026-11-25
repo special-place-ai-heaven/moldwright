@@ -1127,6 +1127,22 @@ class Goals(Base):
             {"lastLineForms": [{"prefix": "VERDICT: ", "rest": "sentence"}], "turnLimit": 3},
             {"lastLineForms": [{"prefix": "PUSHED: ", "rest": "sha"}, {"prefix": "BLOCKED: ", "rest": "sentence"}], "turnLimit": 3}])
 
+    def test_a_not_met_with_fewer_answers_than_its_limit_is_sent_again_once(self):
+        self.tick()
+        self.w.finish("b1", "clearing it now", goal=dict(NOT_MET, verdicts=NOT_MET["verdicts"][:1]))
+        self.tick(2)
+        self.assertEqual((self.state(), len(self.w.sends)), ("building", 2))
+
+    def test_a_second_short_not_met_blocks(self):
+        goal = dict(NOT_MET, verdicts=NOT_MET["verdicts"][:1])
+        self.tick()
+        self.w.finish("b1", "clearing it now", goal=goal)
+        self.tick()
+        self.w.finish("b1", "still clearing it", goal=goal)
+        self.tick(2, fresh=True)
+        self.assertEqual((self.state(), len(self.w.sends)), ("blocked", 2))
+        self.assertIn("goal not met after 1 answers", self.w.issue(5)["comments"][-1])
+
     def test_building_not_met_blocks_with_the_goal_reason_and_no_resend(self):
         self.tick()
         self.w.finish("b1", "did things\nTools: shell 4 calls", goal=NOT_MET)
