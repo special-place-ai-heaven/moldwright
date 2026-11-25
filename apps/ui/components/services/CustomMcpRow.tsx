@@ -34,7 +34,7 @@ export function CustomMcpRow({ server, status, statusLoading, checkedAt, onConne
         <code className="break-all text-xs text-muted-foreground">{server.command}</code>
     ) : status?.status === 'error' || status?.status === 'config_error' ? (
         <span className="text-xs text-destructive">
-            {status.missingEnv?.length ? t('status.needsEnv', { names: status.missingEnv.join(', ') }) : (status.error ?? t('status.noAnswer'))}
+            {status.missingEnv?.length ? t('status.needsEnv', { names: status.missingEnv.join(', ') }) : (status.error || t('status.noAnswer'))}
             {checkedTime !== null && ` · ${t('status.checkedAt', { time: checkedTime })}`}
         </span>
     ) : undefined

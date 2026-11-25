@@ -12,7 +12,7 @@ export function groupTools<T extends { name: string }>(tools: T[]): { group: str
     const groups: { group: string; tools: T[] }[] = []
     const other: T[] = []
     for (const [group, list] of byGroup) {
-        if (group === '' || list.length === 1) other.push(...list)
+        if (group === '' || group === 'other' || list.length === 1) other.push(...list)
         else groups.push({ group, tools: list })
     }
     const order = new Map(tools.map((tool, i) => [tool, i]))
