@@ -228,6 +228,17 @@ class ResolverSpent(Base):
                                               "reason": "cannot", "ended_at": ledger_store.now()})
         self.tick(2)
 
+    def test_a_requeued_job_whose_resolver_attempts_are_spent_is_left_to_intake(self):
+        self.d = self.new()
+        self.d.store.put_job("8", "blocked", {"issue": 8, "title": "T8", "body": ready(), "take": 1, "relabelled": True})
+        self.assertIn("intake takes it", self.d.resolver.do(self.d, "requeue #8"))
+        self.d.resolver.put(self.d, "ended #8", {"state": "owner", "attempt": 3, "issue": 8, "line": "RESOLVED: requeued"})
+        self.d.spent()
+        self.assertEqual(self.state(8), "blocked")
+        self.assertFalse(any(FINAL in c for c in self.w.issue(8)["comments"]))
+        self.tick()
+        self.assertIn(self.state(8), ("queued", "building"))
+
     def test_a_job_whose_resolver_attempts_are_spent_ends_unsolvable(self):
         self.ended()
         self.w.finish("h1", "RESOLVED: first try")
