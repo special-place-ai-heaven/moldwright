@@ -2147,7 +2147,7 @@ class Dispatcher:
             page = json.loads(self.gh(["api", url]))
             runs = page["workflow_runs"]
             if page["total_count"] != len(runs):
-                return None  # An unseen run could supersede a failure.
+                return None
             latest = {}
             for r in runs:
                 if (r["event"], r["head_branch"], r["head_sha"]) != ("push", "dev", parent):
