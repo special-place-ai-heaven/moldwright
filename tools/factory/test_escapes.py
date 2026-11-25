@@ -60,9 +60,9 @@ class Escapes(Base):
         store.put_job(str(n), "merged", {"issue": n, "title": "Fix", "body": "", "relabelled": True}, at=iso(at))
         store.close()
 
-    def test_a_reopened_merged_issue_is_recorded_once_with_a_failure_event(self):
+    def test_a_reopened_merged_issue_beyond_the_first_thousand_is_recorded_once(self):
         self.w.issues = []
-        self.w.open_numbers = {5, 7}
+        self.w.open_numbers = set(range(5, 1006))
         self.w.clock = T0
         self.merge(5, T0 - 3600)
         self.tick(25)

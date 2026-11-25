@@ -198,7 +198,8 @@ class World:
             return json.dumps([{"number": i["number"], "title": i["title"], "body": i.get("body", ""), "labels": i["labels"], "createdAt": i.get("createdAt", "")}
                                for i in self.issues if i.get("labels")])
         if a[:2] == ["issue", "list"] and "--label" not in a:
-            return json.dumps([{"number": n} for n in sorted(self.open_numbers)])
+            limit = int(a[a.index("--limit") + 1]) if "--limit" in a else 30
+            return json.dumps([{"number": n} for n in sorted(self.open_numbers, reverse=True)[:limit]])
         if a[:2] == ["issue", "list"]:
             return json.dumps([{"number": i["number"], "title": i["title"], "body": i["body"], "labels": [{"name": x} for x in i.get("labels", [])]}
                                for i in self.issues if i["number"] not in self.unlabelled])
