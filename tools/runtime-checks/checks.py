@@ -1,7 +1,9 @@
 import argparse
 import http.client
 import json
+import os
 import sys
+import time
 import urllib.parse
 
 MAX_BODY = 1000000
@@ -29,9 +31,10 @@ def liveness(base, deadline, opts):
     if status != 200:
         return False, "status %d" % status
     data = json.loads(body)
-    if not isinstance(data, dict) or "buildSha" not in data:
+    sha = data.get("buildSha") if isinstance(data, dict) else None
+    if not isinstance(sha, str) or not sha:
         return False, "no buildSha"
-    return True, "buildSha present"
+    return True, "buildSha=" + sha[:7]
 
 
 def settings_redirect(base, deadline, opts):
@@ -76,23 +79,31 @@ def published_unknown_slug(base, deadline, opts):
 
 def engine_health(base, deadline, opts):
     if not opts.engine_url:
-        return None, "no --engine-url"
+        return None, "not reachable from here"
     status, _, body = get(opts.engine_url, "/health", deadline)
     if status != 200:
         return False, "status %d" % status
     data = json.loads(body)
     if not isinstance(data, dict) or data.get("status") != "ok":
         return False, "status field not ok"
-    return True, "status ok"
+    return True, "status=ok"
+
+
+def dispatcher_heartbeat(base, deadline, opts):
+    if not opts.heartbeat_file:
+        return None, "not reachable from here"
+    age = int(time.time() - os.stat(opts.heartbeat_file).st_mtime)
+    return age < 180, f"age={age}s"
 
 
 CHECKS = [
-    ("liveness", liveness),
+    ("liveness-app", liveness),
+    ("liveness-engine", engine_health),
+    ("liveness-dispatcher", dispatcher_heartbeat),
     ("settings-redirect", settings_redirect),
     ("redeem-404", redeem_404),
     ("auth-email-field", auth_email_field),
     ("published-unknown-slug", published_unknown_slug),
-    ("engine-health", engine_health),
 ]
 
 
@@ -101,6 +112,7 @@ def main(argv=None):
     parser.add_argument("base_url")
     parser.add_argument("--publish-host")
     parser.add_argument("--engine-url")
+    parser.add_argument("--heartbeat-file")
     parser.add_argument("--deadline", type=float, default=10)
     opts = parser.parse_args(argv)
     failed = False
