@@ -1446,6 +1446,12 @@ class Dispatcher:
             if isinstance(g, dict) and g.get("state") == "not_met":
                 verdicts = [v for v in g.get("verdicts") or [] if isinstance(v, dict)]
                 why = str((verdicts[-1] if verdicts else {}).get("reason") or "no reason given")[:150]
+                limit = int(g.get("turnLimit") or 3)
+                if len(verdicts) < limit and "goal_resent" not in j:
+                    j["goal_resent"] = True
+                    reason = "run %s of %s ended with %d of %d answers: %s" % (
+                        j["run"], self.names.get(j["agent"], j["agent"][:8]), len(verdicts), limit, why)
+                    return self.failed_attempt(j, reason, "ended")
                 j["not_met"] = "goal not met after %s answers: %s" % (len(verdicts) or "its", why)
             return r.get("output") or ""
         why = "run %s of %s ended %s: %s" % (j["run"], self.names.get(j["agent"], j["agent"][:8]), r.get("status"), str(r.get("error") or "-")[:120])
