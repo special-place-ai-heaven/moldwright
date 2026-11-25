@@ -155,6 +155,16 @@ class ProvenTest(Base):
         self.assertIn("plan/5 is not on GitHub", brief)
         self.assertNotIn("its diff was found right", brief)
 
+    def test_a_proven_job_that_depends_on_another_is_built_from_dev(self):
+        self.w.issues[0]["body"] = ready("**Proven branch**: plan/5", deps="#4")
+        self.w.compare_files = ["a/b.py", "c/d.py"]
+        self.tick()
+        self.assertEqual(self.state(), "building")
+        self.assertEqual(len(self.w.sends), 1)
+        self.assertEqual(self.pr_creates(), [])
+        self.assertFalse(any("compare/dev...sha5aaaaaaaaaaa" in arg or "repos/o/r/git/refs" in arg
+                             for call in self.w.gh_calls for arg in call))
+
     def test_a_job_without_the_line_is_built_as_today(self):
         self.w.issues[0]["body"] = ready()
         self.tick()
