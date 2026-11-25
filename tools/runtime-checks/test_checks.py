@@ -1,4 +1,5 @@
 import http.server
+import json
 import os
 import socket
 import subprocess
@@ -24,6 +25,7 @@ NAMES = [
 
 class Handler(http.server.BaseHTTPRequestHandler):
     broken: str | None = None
+    build_sha = "abc1234def"
 
     def log_message(self, *args):
         pass
@@ -48,7 +50,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif broken == "empty-sha":
                 self.reply(200, b'{"buildSha":""}')
             else:
-                self.reply(200, b'{"buildSha": "abc1234def"}')
+                self.reply(200, json.dumps({"buildSha": self.build_sha}).encode())
         elif self.path == "/settings":
             if broken == "settings-redirect":
                 self.reply(200, b"ok", "text/html")
@@ -104,7 +106,7 @@ def run(base, *extra):
         text=True,
         timeout=60,
     )
-    lines = [line for line in proc.stdout.splitlines() if line.strip()]
+    lines = proc.stdout.splitlines()
     return proc.returncode, lines
 
 
@@ -120,6 +122,7 @@ class ChecksTest(unittest.TestCase):
 
     def setUp(self):
         Handler.broken = None
+        Handler.build_sha = "abc1234def"
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.beat = os.path.join(folder.name, "heartbeat")
@@ -156,6 +159,17 @@ class ChecksTest(unittest.TestCase):
         Handler.broken = "empty-sha"
         code, lines = run(self.base)
         self.assertEqual((code, lines[0]), (1, "FAIL liveness-app no buildSha"))
+
+    def test_build_identifier_produces_one_app_line(self):
+        for sha, code, first in [(" \t ", 1, "FAIL liveness-app no buildSha"),
+                                 ("ab\ncd", 1, "FAIL liveness-app no buildSha"),
+                                 ("rc-2", 0, "PASS liveness-app buildSha=rc-2"),
+                                 ("preview.42", 0, "PASS liveness-app buildSha=preview")]:
+            with self.subTest(sha=sha):
+                Handler.build_sha = sha
+                status, lines = run(self.base)
+                self.assertEqual((status, lines[0], len(lines)), (code, first, len(NAMES)))
+                self.assertEqual([line.split()[1] for line in lines], NAMES)
 
     def test_heartbeat_age_and_missing_file(self):
         for seconds, label in [(170, "PASS"), (180, "FAIL"), (190, "FAIL")]:
