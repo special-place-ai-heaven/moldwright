@@ -66,6 +66,16 @@ class ClassifyJoin(Base):
         self.assertEqual(len(creates), 1)
         self.assertEqual(self.prob(401)["comments"], ["Similar to #402: their titles share most words."])
 
+    def test_a_pair_already_labelled_similar_gets_no_comment(self):
+        self.seed(401, "Merge retry fails twice", labels=["P1", "similar"])
+        self.seed(402, "Merge retry fails twice on refusal", labels=["P1", "similar"])
+        self.tick(2)
+        writes = [c[:3] for c in self.w.gh_calls if c[:2] in (["issue", "comment"], ["issue", "edit"], ["label", "create"])]
+        self.assertEqual(writes, [])
+        pair = dict(self.w.rows("SELECT k,v FROM kv WHERE job=?", "similar:401-402"))
+        self.assertEqual(pair["why"], "their titles share most words")
+        self.assertEqual(int(pair["at"]), int(self.w.clock))
+
     def test_an_owner_issue_is_never_named_similar(self):
         self.seed(501, "Merge retry fails twice", labels=["owner"])
         self.seed(502, "Merge retry fails twice on refusal", labels=["P1"])
