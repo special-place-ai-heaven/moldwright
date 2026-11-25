@@ -331,6 +331,7 @@ class Pass:
 
     def similar_pass(self, repo, rules, listed, cap, calls):
         eligible = [i for i in listed if not untouchable(i, rules)]
+        labelled = {i["number"] for i in eligible if "similar" in labels(i)}
         most = rules["similar_max"]
         counts = self.similar_counts()
         for a, b, why in similar(eligible, rules):
@@ -340,20 +341,23 @@ class Pass:
                 continue
             if counts.get(a, 0) >= most or counts.get(b, 0) >= most:
                 continue
-            flag = self.store.get_all("-").get("similar_label")
-            if calls + (4 if flag else 5) > cap:
-                return
-            if not flag:
-                self.gh(["label", "create", "similar", "-R", repo, "--force", "--description", "Another open issue looks like this one"])
-                self.store.set("-", "similar_label", "1")
-                calls += 1
+            notify = not (a in labelled and b in labelled)
+            if notify:
+                flag = self.store.get_all("-").get("similar_label")
+                if calls + (4 if flag else 5) > cap:
+                    continue
+                if not flag:
+                    self.gh(["label", "create", "similar", "-R", repo, "--force", "--description", "Another open issue looks like this one"])
+                    self.store.set("-", "similar_label", "1")
+                    calls += 1
             self.store.set(job, "why", why)
             counts[a] = counts.get(a, 0) + 1
             counts[b] = counts.get(b, 0) + 1
-            for num, other in ((a, b), (b, a)):
-                self.gh(["issue", "edit", str(num), "-R", repo, "--add-label", "similar"])
-                self.gh(["issue", "comment", str(num), "-R", repo, "--body", "Similar to #%d: %s." % (other, why)])
-            calls += 4
+            if notify:
+                for num, other in ((a, b), (b, a)):
+                    self.gh(["issue", "edit", str(num), "-R", repo, "--add-label", "similar"])
+                    self.gh(["issue", "comment", str(num), "-R", repo, "--body", "Similar to #%d: %s." % (other, why)])
+                calls += 4
             self.store.set(job, "at", int(self.now()))
 
 
