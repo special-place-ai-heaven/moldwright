@@ -32,7 +32,7 @@ def liveness(base, deadline, opts):
         return False, "status %d" % status
     data = json.loads(body)
     sha = data.get("buildSha") if isinstance(data, dict) else None
-    if not isinstance(sha, str) or not sha:
+    if not isinstance(sha, str) or not sha.strip() or sha.splitlines() != [sha]:
         return False, "no buildSha"
     return True, "buildSha=" + sha[:7]
 
