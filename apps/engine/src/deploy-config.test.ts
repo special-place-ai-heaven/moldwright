@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import matter from 'gray-matter'
 import { describe, expect, it } from 'vitest'
@@ -17,10 +18,12 @@ function services(text: string): Record<string, Service> {
   return data.services ?? {}
 }
 
-function engines(text: string): [string, Service][] {
+function engines(text: string, composeDir = root): [string, Service][] {
   return Object.entries(services(text)).filter(([, service]) => {
     const image = typeof service.image === 'string' && service.image.includes('moldwright-engine')
-    const build = typeof service.build === 'object' && service.build?.dockerfile === 'apps/engine/Dockerfile'
+    const build = typeof service.build === 'string'
+      ? resolve(composeDir, service.build) === resolve(root, 'apps/engine')
+      : service.build?.dockerfile === 'apps/engine/Dockerfile'
     return image || build
   })
 }
@@ -33,8 +36,8 @@ function keyed(service: Service): boolean {
   return typeof env === 'object' && env !== null && 'RERUN_API_KEY' in env
 }
 
-function offenders(text: string): string[] {
-  return engines(text)
+function offenders(text: string, composeDir = root): string[] {
+  return engines(text, composeDir)
     .filter(([, service]) => keyed(service) || service.env_file !== undefined)
     .map(([name]) => name)
 }
@@ -52,8 +55,9 @@ describe('deploy config', () => {
 
   it('deploy/vps/dev-engine.yml: the engine service lists no RERUN_API_KEY under environment', () => {
     const text = read('deploy/vps/dev-engine.yml')
-    expect(engines(text).map(([name]) => name)).toEqual(['engine-dev'])
-    expect(offenders(text)).toEqual([])
+    const composeDir = resolve(root, 'deploy/vps')
+    expect(engines(text, composeDir).map(([name]) => name)).toEqual(['engine-dev'])
+    expect(offenders(text, composeDir)).toEqual([])
   })
 
   it('flags an engine service that lists RERUN_API_KEY under environment, as a map or a list', () => {
@@ -65,6 +69,20 @@ describe('deploy config', () => {
     expect(offenders(b)).toEqual(['e'])
     expect(offenders(c)).toEqual(['e'])
     expect(offenders(d)).toEqual([])
+  })
+
+  it('checks short-form builds relative to the compose file', () => {
+    const text = `services:
+  worker:
+    build: ../../apps/engine/
+    env_file: synthetic.env
+  frontend:
+    build: ../../apps/ui
+    env_file: synthetic.env
+  other:
+    build: ./apps/engine
+    env_file: synthetic.env`
+    expect(offenders(text, root + 'deploy/vps')).toEqual(['worker'])
   })
 
   it('flags an engine service that takes an env_file, and passes an empty environment block', () => {
