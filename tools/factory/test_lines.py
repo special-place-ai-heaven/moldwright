@@ -424,11 +424,14 @@ class Controls(Pair):
         self.assertEqual(self.state(), "building")
         self.waiting_job()
         self.control("DRAINING")
-        self.tick(2)
-        self.assertEqual(self.jobs_by_state(), [(5, "building"), (6, "cancelled")])
-        self.assertEqual((len(self.w.sends), self.d.read("control", {})["state"]), (1, "DRAINING"))
+        for _ in range(2):
+            self.tick()
+            self.assertEqual(self.jobs_by_state(), [(5, "building"), (6, "cancelled")])
+            self.assertEqual((len(self.w.sends), self.d.read("control", {})["state"]), (1, "DRAINING"))
         self.w.finish("b1", PR_LINE)
-        self.tick(3)
+        self.tick()
+        self.assertEqual((self.d.read("control", {})["state"], self.w.reports[-1]["control"]["state"]), ("STOPPED", "STOPPED"))
+        self.tick(2)
         self.assertEqual((self.jobs_by_state(), len(self.w.sends), self.w.cancels), ([(5, "cancelled"), (6, "cancelled")], 1, []))
         self.assertEqual(self.w.rows("SELECT status FROM fires"), [("done",)])
         self.assertEqual(self.d.read("control", {})["state"], "STOPPED")
@@ -438,6 +441,14 @@ class Controls(Pair):
         self.control("RUNNING")
         self.tick(3)
         self.assertEqual((self.jobs_by_state(), len(self.w.sends)), ([(5, "cancelled"), (6, "cancelled")], 1))
+
+    def test_an_idle_drain_is_reported_stopped_in_the_beat_it_is_learnt(self):
+        self.d = self.new()
+        self.waiting_job()
+        self.control("DRAINING")
+        self.tick()
+        self.assertEqual((self.jobs_by_state(), self.w.sends), ([(5, "cancelled"), (6, "cancelled")], []))
+        self.assertEqual((self.d.read("control", {})["state"], self.w.reports[-1]["control"]["state"]), ("STOPPED", "STOPPED"))
 
     def test_a_hard_stop_leaves_nothing_in_flight_and_nothing_queued_without_an_error(self):
         self.d = self.new()
@@ -699,6 +710,32 @@ class OrderRules(Pair):
     def control(self, state):
         self.clicks = getattr(self, "clicks", 0) + 1
         self.answer["control"] = {"state": state, "by": "rob", "at": D.iso(self.w.clock + self.clicks)}
+
+    def stop_readd_start(self, stop, stage):
+        self.ready_order("all_issues", [5])
+        self.tick(2)
+        self.control(stop)
+        self.tick(2)
+        if stop == "DRAINING":
+            self.w.finish("b1", PR_LINE)
+            self.tick()
+        self.assertEqual((self.order_jobs(), self.d.read("control", {})["state"]), ([(5, "cancelled")], "STOPPED"))
+        churn = lambda: (len(self.lines_said("#5 queued")), len(self.lines_said("#5 cancelled: the factory was stopped")))
+        before, sends = churn(), len(self.w.sends)
+        self.order("all_issues", [5])
+        self.tick(3)
+        self.assertEqual((churn(), len(self.w.sends), self.order_jobs()), (before, sends, [(5, "cancelled")]))
+        self.control("RUNNING")
+        self.tick(4)
+        wo = self.w.reports[-1]["work_order"]
+        self.assertEqual((wo["current"], wo["done"], wo["wait"]), (5, [], None))
+        self.assertEqual((len(self.w.sends), self.order_jobs(), self.d.lines["o/r"].store.get_job("5")["takes"]), (sends + 1, [(5, stage)], 1))
+
+    def test_after_a_hard_stop_a_re_added_issue_is_taken_once_on_start(self):
+        self.stop_readd_start("STOPPED", "building")
+
+    def test_after_a_normal_stop_a_re_added_issue_is_taken_once_on_start(self):
+        self.stop_readd_start("DRAINING", "reviewing")
 
     def test_a_failed_job_halts_the_sequence_until_the_owner_retries_or_skips_it(self):
         self.w.issues.append(issue(6, "Six"))

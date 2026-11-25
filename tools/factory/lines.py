@@ -263,13 +263,13 @@ class Lines:
         most = max(1, min(self.throttle()["max_ghosts"], ceiling()))
         for n in issues:
             j, kv = store.get_job(str(n)) or {}, store.get_all(str(n))
-            if n in skipped or (not j and kv.get("closed_unstarted")) or (order["kind"] == "all_issues" and kv.get("order_paused")) or (
+            if n in skipped or (j.get("state") in (None, "cancelled") and kv.get("closed_unstarted")) or (order["kind"] == "all_issues" and kv.get("order_paused")) or (
                     j.get("state") == "blocked" and DEPENDENCY_ENDED.match(j.get("reason") or "")):
                 done.append(n)
                 continue
             if j.get("state") in FAILED and retried.get(str(n)) != j.get("take", 1):
                 return {"wait": "job #%d failed: retry or skip" % n, "issues": picked, "order": issues, "done": done, "halted": n, "skipped": skipped}
-            if j.get("state") in states.END and j.get("state") not in FAILED:
+            if j.get("state") in states.END and j.get("state") not in FAILED + ("cancelled",):
                 done.append(n)
                 continue
             if j.get("state") == "waiting":
@@ -753,12 +753,20 @@ class Lines:
             elif repo != self.home:
                 self.lines.pop(repo).close()
         self.kv.set("-", "finishing", json.dumps([r for r, _ in self.finishing()]))
+        before = self.control()
         self.learn(self.lines[self.active].answer)
+        self.apply_controls()
+        if self.control() == "DRAINING":
+            for d in self.lines.values():
+                d.clear_queue()
         self.drained()
         self.apply_controls()
         if self.control() == "STOPPED":
             for d in self.lines.values():
                 d.stop_running()
+        if self.control() != before and self.lines[self.active].reporting:
+            self.lines[self.active].report_line()
+            self.learn(self.lines[self.active].answer)
 
     def learn(self, answer):
         if isinstance(answer, dict):

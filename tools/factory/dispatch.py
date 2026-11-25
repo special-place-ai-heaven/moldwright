@@ -765,7 +765,7 @@ class Dispatcher:
                 if i is None:
                     continue
                 if i.get("state") == "CLOSED":
-                    if not self.store.get_job(str(n)):
+                    if (self.store.get_job(str(n)) or {}).get("state") in (None, "cancelled"):
                         self.store.set(str(n), "closed_unstarted", "1")
                         log(n, "work order: issue closed before it started, skipped")
                     continue
@@ -968,7 +968,14 @@ class Dispatcher:
                 return (j["issue"], shared[0])
         return None
 
+    def retaken(self, old):
+        if old["state"] == "cancelled":
+            return self.work is not None and old["issue"] in self.work["issues"]
+        return old["state"] in END and bool(old.get("relabelled"))
+
     def intake(self):
+        if self.run_state in ("DRAINING", "STOPPED"):
+            return
         parked = set() if self.work is None else {j["issue"] for j in self.jobs() if j["state"] in states.QUEUE and j["issue"] not in self.work["issues"]}
         open_jobs = [j for j in self.jobs() if j["state"] not in END + ("waiting",) and j["issue"] not in parked]
         pool = self.cfg.get("pool")
@@ -990,7 +997,7 @@ class Dispatcher:
         issues = [i for i in issues if i["number"] not in paused and (authors.trusted_author(i) or "author" not in i)]
         for i in issues:
             old = self.store.get_job(str(i["number"]))
-            if old and old["state"] != "waiting" and not (old["state"] in END and old.get("relabelled")):
+            if old and old["state"] != "waiting" and not self.retaken(old):
                 continue
             if all(r <= 0 for r in rooms.values()) and not (old and old["state"] == "waiting"):
                 continue
@@ -1024,7 +1031,7 @@ class Dispatcher:
                 waiting = bool(old) and old["state"] == "waiting"
                 if not waiting and all(r <= 0 for r in rooms.values()):
                     continue
-                if old and not waiting and not (old["state"] in END and old.get("relabelled")):
+                if old and not waiting and not self.retaken(old):
                     continue
                 if old and old["state"] == "waiting" and old.get("recheck") and not self.recheck_settled(old):
                     continue
@@ -1033,7 +1040,7 @@ class Dispatcher:
                 if not old or (old.get("body") or "") != (i.get("body") or ""):
                     takes = 1
                 else:
-                    takes = before + 1 if old["state"] in END else before
+                    takes = before + 1 if old["state"] in END and old["state"] != "cancelled" else before
                 if old and old["state"] == "unsolvable" and (old.get("body") or "") == (i.get("body") or ""):
                     continue
                 if old and old["state"] in END and takes > MAX_TAKES:
