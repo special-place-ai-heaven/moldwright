@@ -97,7 +97,9 @@ export async function resolveRunModel(agent: LoadedAgent, override?: ModelOverri
     if (override.model) {
         const asked = allowedModel(provider, override.model)
         if (override.connectionId || override.provider || !connection || isUsable(connection, asked)) return { connection, provider, model: asked }
-        return { connection, provider, model: allowedModel(provider, (await compatibleModel(connection)) ?? override.model) }
+        const model = allowedModel(provider, (await compatibleModel(connection)) ?? override.model)
+        if (model !== asked) logger.warn({ agent: agent.id, connection: connection.id, requested: asked, using: model }, 'requested model unavailable, substituted')
+        return { connection, provider, model }
     }
     const kept = agent.resolved.model
     const model = connection && !isUsable(connection, allowedModel(provider, kept)) ? (await compatibleModel(connection)) ?? kept : kept

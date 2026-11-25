@@ -16,7 +16,7 @@ const { createConnection, ensureMoldwrightConnection } = await import('../connec
 const { clearAgentCache } = await import('./registry.js')
 const { clearBoxDefault } = await import('../connections/default.js')
 const { logger } = await import('../lib/logger.js')
-const { automationModel, resolveConfiguredModel } = await import('./availability.js')
+const { automationModel, resolveConfiguredModel, resolveRunModel } = await import('./availability.js')
 
 let seq = 0
 
@@ -98,5 +98,27 @@ describe('automationModel', () => {
 
         expect(using.connectionId).toBe(RERUN_CONNECTION_ID)
         expect(warn).toHaveBeenCalledWith(expect.objectContaining({ source: 'trigger', requested: `none:${RERUN_MODEL}`, using: `${RERUN_CONNECTION_ID}:${RERUN_MODEL}` }), 'connection unavailable, falling back')
+    })
+})
+
+describe('resolveRunModel substitution', () => {
+    it('warns with the requested and the substituted model when the requested one is not served', async () => {
+        const anthropic = await connect('anthropic', { ANTHROPIC_API_KEY: 'k' })
+        const agent = await makeAgent(anthropic.id, 'anthropic', 'claude-sonnet-4-6')
+
+        const run = await resolveRunModel(agent, { model: 'not-offered-model' })
+
+        expect(run.connection?.id).toBe(anthropic.id)
+        expect(run.provider).toBe('anthropic')
+        expect(run.model).not.toBe('not-offered-model')
+        expect(warn).toHaveBeenCalledWith(expect.objectContaining({ agent: 'a1', connection: anthropic.id, requested: 'not-offered-model', using: run.model }), 'requested model unavailable, substituted')
+    })
+
+    it('stays quiet when the requested model is served', async () => {
+        const anthropic = await connect('anthropic', { ANTHROPIC_API_KEY: 'k' })
+        const agent = await makeAgent(anthropic.id, 'anthropic', 'claude-sonnet-4-6')
+
+        expect(await resolveRunModel(agent, { model: 'claude-opus-4-8' })).toMatchObject({ model: 'claude-opus-4-8' })
+        expect(warn).not.toHaveBeenCalled()
     })
 })
