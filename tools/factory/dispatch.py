@@ -162,7 +162,7 @@ def final_state(j, forms):
         '- Objective: rerun #%s, "%s", as the issue text states it.' % (j["issue"], j["title"]),
         '- Allowed files: %s, plus each existing test file the pull request body lists under `## Tests adapted`.' % issue_files(j.get("body")),
         '- Verification: %s' % issue_run(j.get("body")),
-        '- Your last line is exactly %s. Nothing may follow that line, not even a tools line.' % forms,
+        '- Your last line is exactly %s, written as plain text with no backticks, quotes or bullet around it. Nothing may follow that line, not even a tools line.' % forms,
     ])
 
 
