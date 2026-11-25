@@ -3,24 +3,27 @@ import os
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(HERE, "checks.py")
 SLUG_PREFIX = "runtime-check-no-such-slug."
 NAMES = [
-    "liveness",
+    "liveness-app",
+    "liveness-engine",
+    "liveness-dispatcher",
     "settings-redirect",
     "redeem-404",
     "auth-email-field",
     "published-unknown-slug",
-    "engine-health",
 ]
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
-    broken = None
+    broken: str | None = None
 
     def log_message(self, *args):
         pass
@@ -40,10 +43,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if host.startswith(SLUG_PREFIX):
             self.reply(200 if broken == "published-unknown-slug" else 404, b"gate", "text/html")
         elif self.path == "/api/version":
-            if broken == "liveness":
+            if broken == "liveness-app":
                 self.reply(500, b"{}")
+            elif broken == "empty-sha":
+                self.reply(200, b'{"buildSha":""}')
             else:
-                self.reply(200, b'{"buildSha": "abc123"}')
+                self.reply(200, b'{"buildSha": "abc1234def"}')
         elif self.path == "/settings":
             if broken == "settings-redirect":
                 self.reply(200, b"ok", "text/html")
@@ -57,7 +62,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 self.reply(200, b'<html><input type="email" name="e"></html>', "text/html")
         elif self.path == "/health":
-            status = "down" if broken == "engine-health" else "ok"
+            status = "down" if broken == "liveness-engine" else "ok"
             self.reply(200, ('{"status": "%s"}' % status).encode())
         else:
             self.reply(200, b"home", "text/html")
@@ -115,27 +120,60 @@ class ChecksTest(unittest.TestCase):
 
     def setUp(self):
         Handler.broken = None
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.beat = os.path.join(folder.name, "heartbeat")
+        with open(self.beat, "w") as f:
+            f.write("SECRET-BEAT-LINE")
+        self.age(10)
+
+    def age(self, seconds):
+        stamp = time.time() - seconds
+        os.utime(self.beat, (stamp, stamp))
 
     def full_args(self):
-        return ["--publish-host", "example.test", "--engine-url", self.base]
+        return ["--publish-host", "example.test", "--engine-url", self.base, "--heartbeat-file", self.beat]
 
-    def test_all_pass_one_line_each(self):
+    def test_all_pass_liveness_lines_first(self):
         code, lines = run(self.base, *self.full_args())
         self.assertEqual(code, 0, lines)
-        self.assertEqual(len(lines), 6, lines)
+        self.assertEqual([line.split()[1] for line in lines], NAMES)
+        self.assertEqual(lines[:2], ["PASS liveness-app buildSha=abc1234", "PASS liveness-engine status=ok"])
+        self.assertRegex(lines[2], r"^PASS liveness-dispatcher age=\d+s$")
+        self.assertNotIn("SECRET-BEAT-LINE", "\n".join(lines))
         for line in lines:
             self.assertTrue(line.startswith("PASS "), line)
 
-    def test_without_optional_targets_two_are_skipped_and_exit_is_zero(self):
+    def test_without_optional_targets_three_are_skipped_and_exit_is_zero(self):
         code, lines = run(self.base)
         self.assertEqual(code, 0, lines)
         self.assertEqual(sum(x.startswith("PASS ") for x in lines), 4, lines)
-        self.assertEqual(sum(x.startswith("SKIP ") for x in lines), 2, lines)
+        self.assertEqual(sum(x.startswith("SKIP ") for x in lines), 3, lines)
+        self.assertIn("SKIP liveness-engine not reachable from here", lines)
+        self.assertIn("SKIP liveness-dispatcher not reachable from here", lines)
+
+    def test_empty_build_sha_fails_the_app_line(self):
+        Handler.broken = "empty-sha"
+        code, lines = run(self.base)
+        self.assertEqual((code, lines[0]), (1, "FAIL liveness-app no buildSha"))
+
+    def test_heartbeat_age_and_missing_file(self):
+        for seconds, label in [(170, "PASS"), (180, "FAIL"), (190, "FAIL")]:
+            with self.subTest(seconds=seconds):
+                self.age(seconds)
+                code, lines = run(self.base, *self.full_args())
+                self.assertEqual(code, int(label == "FAIL"))
+                self.assertRegex(lines[2], rf"^{label} liveness-dispatcher age=\d+s$")
+        os.remove(self.beat)
+        code, lines = run(self.base, *self.full_args())
+        self.assertEqual(code, 1)
+        self.assertTrue(lines[2].startswith("FAIL liveness-dispatcher "))
 
     def test_each_break_fails_only_its_check(self):
         for name in NAMES:
             with self.subTest(check=name):
                 Handler.broken = name
+                self.age(300 if name == "liveness-dispatcher" else 10)
                 code, lines = run(self.base, *self.full_args())
                 self.assertEqual(code, 1, lines)
                 fails = [x for x in lines if x.startswith("FAIL ")]
@@ -145,9 +183,9 @@ class ChecksTest(unittest.TestCase):
     def test_nothing_listening_fails_every_check_without_hanging(self):
         port = free_closed_port()
         base = "http://127.0.0.1:%d" % port
-        code, lines = run(base, "--publish-host", "example.test", "--engine-url", base, "--deadline", "2")
+        code, lines = run(base, "--publish-host", "example.test", "--engine-url", base, "--deadline", "2", "--heartbeat-file", self.beat + ".missing")
         self.assertEqual(code, 1, lines)
-        self.assertEqual(len(lines), 6, lines)
+        self.assertEqual(len(lines), 7, lines)
         for line in lines:
             self.assertTrue(line.startswith("FAIL "), line)
 
