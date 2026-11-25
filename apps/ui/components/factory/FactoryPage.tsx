@@ -86,7 +86,7 @@ function WorkspaceFactoryPage({ session }: { session: ReturnType<typeof useSessi
         return () => window.removeEventListener('keydown', onKey)
     }, [])
 
-    const controls = useFactoryControls(snapshot?.repo)
+    const controls = useFactoryControls(`${snapshot?.repo}|${snapshot?.control?.at}`)
     const coworkers = useMemo(() => snapshot?.pools.flatMap(p => p.coworkers) ?? [], [snapshot])
     const names = useMemo(() => Object.fromEntries(coworkers.flatMap(c => (c.id ? [[c.id, c.name]] : []))), [coworkers])
     const openCoworker = useCallback((id: string) => {

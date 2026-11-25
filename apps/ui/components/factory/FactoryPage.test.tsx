@@ -168,6 +168,27 @@ describe('factory page', () => {
         expect(world().selectedIssue).toBe(42)
     })
 
+    it('a state change made elsewhere is re-read when the factory reports it, so the pill shows no stale ask', async () => {
+        vi.useFakeTimers({ toFake: ['setInterval'] })
+        try {
+            const base = snapshotWith([])
+            const reported = (state: string, at: string) => ({ ...base, snapshot: { ...base.snapshot, control: { state, at, by: 'owner' } } })
+            mocks.answer = reported('RUNNING', iso(NOW - 60_000))
+            mocks.controls = { isOwner: true, activeRepo: 'o/r', state: 'RUNNING', stateAt: iso(NOW - 61_000), providersOff: [], throttle: null, projectLimits: null, orders: [] }
+            await mount()
+            const pill = () => host.querySelector<HTMLElement>('[data-state-pill]')!
+            expect(pill().dataset.statePill).toBe('RUNNING')
+
+            mocks.controls = { ...mocks.controls, state: 'STOPPED', stateAt: iso(NOW - 2000) }
+            mocks.answer = reported('STOPPED', iso(NOW - 1000))
+            await act(async () => { vi.advanceTimersByTime(30_000) })
+            await flush()
+            expect(pill().dataset.statePill).toBe('STOPPED')
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
     it('mounts the coworker panel', async () => {
         await mount()
         expect(host.querySelector('[data-agent-panel]')).not.toBeNull()
