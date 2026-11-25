@@ -359,6 +359,8 @@ class Resolver:
                 if takes >= REQUEUE_MAX:
                     return "not allowed: DO: %s (taken %d times; Rob decides)" % (text, takes)
                 d.gh(["issue", "edit", str(n), "-R", d.repo, "--add-label", d.label, "--remove-label", "factory-blocked"])
+                j["requeued_take"] = j.get("take") or 1
+                d.save(j, "requeued by a resolver run")
                 return "DO: %s -> #%d labelled %s again; intake takes it on the next beat" % (text, n, d.label)
             if verb == "wait-off" and j and j["state"] in states.WAIT_STATES and (j.get("not_before") or j.get("wait_reason")):
                 j.pop("not_before", None)

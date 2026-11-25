@@ -2546,6 +2546,9 @@ class Dispatcher:
             used = r.get("attempt", 1) >= resolver.ATTEMPTS or r.get("sends", 0) >= resolver.SEND_MAX
             j = self.store.get_job(m.group(1)) if m and r.get("state") == resolver.OWNER and used else None
             if j and j["state"] in problems.ENDED:
+                if j.get("requeued_take") == (j.get("take") or 1):
+                    log(j["issue"], "problem %s: attempts spent, but the job is requeued; left to intake" % key)
+                    continue
                 self.unsolvable(j, "the resolver's attempts on problem %s are spent: %s" % (key, r.get("line") or "-"))
 
     def note_problems(self, known):
