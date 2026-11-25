@@ -16,7 +16,7 @@ const GROUP_LABEL: Record<Shown, string> = { problems: 'Problems', active: 'Acti
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const IDLE_TEXT = (merged: number) => `The line is idle. ${merged} merged today.`
 export const SAMPLE_TEXT = 'This is the sample floor: no live data from the line yet. The tasks moving on it are a demonstration.'
-const REASON_STATES = new Set(['blocked', 'failed', 'returned'])
+const REASON_STATES = new Set(['blocked', 'failed', 'returned', 'cancelled'])
 
 export function formatInState(ms: number): string {
     const s = Math.max(0, Math.floor(ms / 1000))

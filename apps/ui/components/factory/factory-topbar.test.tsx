@@ -206,6 +206,22 @@ describe('FactoryTopBar', () => {
         expect(trigger.getAttribute('aria-expanded')).toBe('true')
     })
 
+    it('after a click the pill shows the ask until the factory reports it', async () => {
+        const s = snapshot()
+        const at = (state: 'RUNNING' | 'STOPPED') => createElement(TooltipProvider, null, createElement(FactoryTopBar, {
+            snapshot: { ...s, control: { state, by: 'owner', at: s.madeAt } }, selected: null, onSelect: () => {}, names: {}, onOpenCoworker: () => {},
+            controls: { view: { isOwner: true, activeRepo: 'o/r', state: 'STOPPED', providersOff: [], throttle: null, orders: [], projectLimits: null }, loadError: null, reload: async () => {} },
+        }))
+        await act(async () => { root.render(at('RUNNING')) })
+        const pill = q('[data-state-pill]')!
+        expect(pill.getAttribute('data-state-pill')).toBe('asked')
+        expect(pill.textContent).toContain('Asked for stopped: waiting for the factory')
+        expect(pill.querySelector('.animate-pulse')).not.toBeNull()
+        await act(async () => { root.render(at('STOPPED')) })
+        expect(q('[data-state-pill]')!.getAttribute('data-state-pill')).toBe('STOPPED')
+        expect(q('[data-state-pill]')!.querySelector('.animate-pulse')).toBeNull()
+    })
+
     it('with no snapshot says it is the sample and has no chips', () => {
         render({ snapshot: null })
         expect(host.textContent).toContain(SAMPLE_TEXT)

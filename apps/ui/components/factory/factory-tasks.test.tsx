@@ -63,15 +63,15 @@ describe('FactoryTasks', () => {
         expect(b.querySelector('a')).toBeNull()
     })
 
-    it('shows the reason under blocked, failed and returned jobs only', () => {
+    it('shows the reason under blocked, failed, returned and cancelled jobs only', () => {
         render([
             job({ issue: 1, state: 'blocked', reason: 'why-blocked' }), job({ issue: 2, state: 'failed', reason: 'why-failed' }),
             job({ issue: 3, state: 'returned', reason: 'why-returned' }), job({ issue: 4, state: 'building', reason: 'why-building' }),
-            job({ issue: 5, state: 'failed', reason: null }),
+            job({ issue: 5, state: 'failed', reason: null }), job({ issue: 6, state: 'cancelled', reason: 'cancelled by the owner' }),
         ])
         act(() => Array.from(host.querySelectorAll<HTMLButtonElement>('button[aria-expanded]')).find((b) => b.textContent?.includes('Ended today'))!.click())
         const t = host.textContent ?? ''
-        expect(t).toContain('why-blocked'); expect(t).toContain('why-failed'); expect(t).toContain('why-returned')
+        expect(t).toContain('why-blocked'); expect(t).toContain('why-failed'); expect(t).toContain('why-returned'); expect(t).toContain('cancelled by the owner')
         expect(t).not.toContain('why-building')
     })
 
