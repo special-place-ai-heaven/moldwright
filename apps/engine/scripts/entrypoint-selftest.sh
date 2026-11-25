@@ -17,7 +17,9 @@ esac
 key=$(cat <&3)
 exec 3<&-
 [ "$key" = dummy ] || fail "key read from fd 3 is wrong"
-[ "$(cat /proc/1/environ /proc/self/environ | tr '\0' '\n' | grep -c "=$key\$")" = 0 ] || fail "an environment holds the key value"
+{ printf '%s\0' "$key"; cat /proc/1/environ /proc/self/environ; } |
+    LC_ALL=C awk 'BEGIN { RS = "\0" } NR == 1 { key = "=" $0; next } substr($0, index($0, "=")) == key { exit 1 }' ||
+    fail "an environment holds the key value"
 left=$(timeout 2 dd if=/proc/1/fd/3 iflag=nonblock 2>/dev/null | wc -c)
 [ "$left" -eq 0 ] || fail "fd 3 of tini still holds $left byte(s)"
 echo "selftest: pid1 tini, fd 3 pipe, key drained, key variable in no environment, key file variable in no environment"
