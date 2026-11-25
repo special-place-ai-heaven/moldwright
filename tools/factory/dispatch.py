@@ -1786,7 +1786,7 @@ class Dispatcher:
             return
         if st == "queued" and not self.taking:
             return
-        if st == "queued" and proven_line(j.get("body")):
+        if st == "queued" and proven_line(j.get("body")) and not depends_on({"number": int(j["issue"]), "body": j.get("body") or ""}):
             if self.take(j):
                 self.open_proven(j, proven_line(j.get("body")))
             return
