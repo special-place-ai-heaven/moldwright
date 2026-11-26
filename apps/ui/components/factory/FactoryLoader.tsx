@@ -96,7 +96,7 @@ export function FactoryLoader({ snapshot, now: fixedNow, controls }: { snapshot:
                         <span className="shrink-0 tabular-nums text-muted-foreground">#{w.issue}</span>
                         <span className="min-w-0 flex-1 truncate">{w.title}</span>
                         <span className="shrink-0 text-muted-foreground">
-                            {w.reason !== null && (w.waitsOn.length === 0 || w.reason.includes(FILE_WAIT)) ? w.reason : w.waitsOn.length === 0 ? '' : `waits on ${w.waitsOn.map(d => `#${d.issue}${d.state === null ? '' : ` (${d.state})`}`).join(', ')}`}
+                            {w.reason !== null && (w.waitsOn.length === 0 || w.reason.includes(FILE_WAIT) || w.reason.includes('dead #')) ? w.reason : w.waitsOn.length === 0 ? '' : `waits on ${w.waitsOn.map(d => `#${d.issue}${d.state === null ? '' : ` (${d.state})`}`).join(', ')}`}
                         </span>
                     </div>
                 ))}

@@ -721,6 +721,71 @@ class OrderRules(Pair):
         self.assertEqual((self.state(), store.get_job("5").get("take", 1), len(self.w.sends)), ("building", 2, 1))
         self.assertTrue(any(t["from_state"] == "returned" and t["to_state"] == "queued" for t in store.transitions_of("5")))
 
+    def test_new_order_intakes_a_pending_replan_once_through_the_normal_gates(self):
+        for scenario in ("fresh", "same order", "completed", "closed", "retry cap", "last replan", "failed replan"):
+            with self.subTest(scenario=scenario):
+                self.close()
+                self.w = self.worlds["o/r"] = World()
+                self.w.report_answer = self.answer = {"kept": True}
+                self.cfg["ledger_file"] = self.w.ledger = os.path.join(self.dir.name, scenario + ".db")
+                self.cfg.update(one_file_one_job=True, types={
+                    "coder": {"coworkers": [{"id": "b1", "name": "B1"}]},
+                    "planner": {"coworkers": [{"id": "p1", "name": "Boss"}]},
+                })
+                self.ready_order("issue", [5])
+                self.tick(3)
+                line = self.d.lines["o/r"]
+                store = line.store
+                old = store.get_job("5")
+                previous = D.MAX_REPLANS - 1 if scenario == "last replan" else 0
+                store.put_job("5", "building", dict(old, replans=previous, takes=D.MAX_TAKES if scenario == "retry cap" else 1))
+                self.w.finish("b1", "BLOCKED: plan: incomplete")
+                with unittest.mock.patch.object(S, "now", lambda: D.iso(self.w.clock)):
+                    self.tick()
+                run = store.get_job("5")["replan_run"]
+                self.assertIn("re-plan %d of %d sent" % (previous + 1, D.MAX_REPLANS), [t["reason"] for t in store.transitions_of("5")])
+                self.w.clock += 1
+                if scenario == "completed":
+                    store.close_run(run, "done", at=D.iso(self.w.clock))
+                    self.w.clock += 1
+                if scenario == "closed":
+                    self.w.issue(5)["state"] = "CLOSED"
+                if scenario != "same order":
+                    self.order("issue", [5])
+                self.tick(3)
+                self.assertEqual(self.state(), "returned")
+                if scenario in ("same order", "completed", "closed"):
+                    self.assertEqual(self.d.work()["done"], [5])
+                    continue
+                self.assertEqual((self.d.work()["issues"], self.d.work()["done"]), ([5], []))
+                self.w.unlabelled.clear()
+                if scenario == "fresh":
+                    self.w.issue(5)["body"] = ready() + "\n**Run**\n```sh\npython3 -m unittest test_missing.py\n```\n"
+                    self.tick()
+                    self.assertEqual(self.state(), "returned")
+                self.w.clock += 1
+                self.w.finish("p1", "Replan finished", status="error" if scenario == "failed replan" else "done")
+                self.w.runs[run]["finishedAt"] = D.iso(self.w.clock)
+                if scenario == "fresh":
+                    with unittest.mock.patch.object(D.plancheck, "tree", return_value=set()):
+                        self.tick(2)
+                    self.assertEqual(self.state(), "returned")
+                    self.assertTrue(self.w.rows("SELECT v FROM kv WHERE job='5' AND k='plancheck' AND v LIKE '%:bad'"))
+                    store.put_job("6", "building", {"issue": 6, "state": "building", "worker": "researcher", "paths": ["a/b.py"]})
+                    self.w.issue(5)["body"] = ready("Corrected plan")
+                    with contextlib.redirect_stdout(self.out):
+                        line.intake()
+                    self.assertEqual(store.get_job("5")["file_wait"], [6, "a/b.py"])
+                    store.put_job("6", "merged", {"issue": 6, "state": "merged"})
+                self.tick(3)
+                want = {"retry cap": "unsolvable", "failed replan": "returned"}.get(scenario, "building")
+                job = store.get_job("5")
+                self.assertEqual((job["state"], job["replans"]), (want, previous + 1))
+                self.assertEqual([agent for agent, *_ in self.w.sends], ["b1", "p1"] + (["b1"] if want == "building" else []))
+                if want == "building":
+                    self.assertEqual(job["take"], 2)
+                    self.assertNotIn("replan_run", job)
+
     def test_both_stops_cancel_the_work_order(self):
         self.ready_order("all_issues", [5])
         self.tick(2)

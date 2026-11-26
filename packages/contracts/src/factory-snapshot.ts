@@ -48,6 +48,7 @@ export const factoryJobSchema = z.object({
     tokensOut: count.nullable(),
     parent: z.number().int().positive().nullable(),
     dependsOn: z.array(z.number().int().positive()).max(20),
+    waitingOn: z.array(z.number().int().positive()).max(20).optional(),
     closedOutside: z.literal(true).optional(),
     reason: z.string().max(300).nullable(),
     history: z.array(factoryHistoryEntrySchema).max(30).optional(),

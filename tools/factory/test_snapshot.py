@@ -65,7 +65,7 @@ class Snapshot(unittest.TestCase):
         self.assertEqual(set(snap) - {"digest"}, set(sample) - {"plan"})
         self.assertEqual(kinds(snap["jobs"][0]), kinds(full(sample["jobs"][0])))
         self.assertEqual(kinds(snap["jobs"][2]), {**kinds(full(sample["jobs"][5])), "pr": "int", "round": "int"})
-        self.assertEqual(kinds(snap["jobs"][1]), kinds(full(sample["jobs"][2])))
+        self.assertEqual(kinds(snap["jobs"][1]), {**kinds(full(sample["jobs"][2])), "waitingOn": "list"})
         self.assertEqual(set(snap["holds"][0]), set(sample["holds"][0]))
         self.assertEqual(kinds(snap["holds"][0]), kinds(sample["holds"][0]))
         self.assertEqual(set(snap["pools"][0]), set(sample["pools"][0]))

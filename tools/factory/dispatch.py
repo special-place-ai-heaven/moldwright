@@ -787,10 +787,10 @@ class Dispatcher:
             mine.append(i)
         return mine
 
-    def order_view(self, n):
+    def order_view(self, n, fresh=False):
         order_id = (self.work or {}).get("id")
         cached_order, at, seen = self.order_views.get(n, (None, None, None))
-        if cached_order == order_id and at is not None and self.now() - at < ORDER_VIEW_S:
+        if not fresh and cached_order == order_id and at is not None and self.now() - at < ORDER_VIEW_S:
             return seen
         try:
             seen = json.loads(self.gh(["issue", "view", str(n), "-R", self.repo, "--json", "number,title,labels,body,author,state"]) or "{}")
@@ -987,9 +987,31 @@ class Dispatcher:
                 return (j["issue"], shared[0])
         return None
 
-    def retaken(self, old):
+    def order_replan(self, job, order):
+        n, run = str(job["issue"]), job.get("replan_run")
+        if (job["state"] != "returned" or not job.get("relabelled") or not run or not order.get("id")
+                or order["id"] == job.get("returned_order") or not 0 < job.get("replans", 0) <= MAX_REPLANS
+                or clocks.klass("BLOCKED", blocked=job.get("reason")) != "plan"):
+            return None
+        kv = self.store.get_all(n)
+        if "closed_seen" in kv or kv.get("returned_closed_order") == order["id"]:
+            return None
+        fire = self.store.db.execute("SELECT status, intent_at, ended_at FROM fires WHERE job=? AND stage='replan' AND run_id=?", (n, run)).fetchone()
+        if fire is None or fire[0] not in ("running", "done"):
+            return None
+        try:
+            asked, ended, sent = (limits.ts(str(t)) for t in (order.get("asked_at"), job.get("ended_at"), fire[1]))
+            if ended < asked and sent <= asked and (fire[0] == "running" or asked < limits.ts(str(fire[2]))):
+                return fire[0]
+        except (TypeError, ValueError):
+            return None
+        return None
+
+    def retaken(self, old, labelled=False):
         if old["state"] == "cancelled":
             return self.work is not None and old["issue"] in self.work["issues"]
+        if old["state"] == "returned" and old.get("replan_run") and (self.work or {}).get("id"):
+            return labelled and self.order_replan(old, self.work) == "done"
         return old["state"] in END and bool(old.get("relabelled"))
 
     def intake(self):
@@ -1016,7 +1038,7 @@ class Dispatcher:
         issues = [i for i in issues if i["number"] not in paused and (authors.trusted_author(i) or "author" not in i)]
         for i in issues:
             old = self.store.get_job(str(i["number"]))
-            if old and old["state"] != "waiting" and not self.retaken(old):
+            if old and old["state"] != "waiting" and not self.retaken(old, i["number"] in listed):
                 continue
             if all(r <= 0 for r in rooms.values()) and not (old and old["state"] == "waiting"):
                 continue
@@ -1050,8 +1072,19 @@ class Dispatcher:
                 waiting = bool(old) and old["state"] == "waiting"
                 if not waiting and all(r <= 0 for r in rooms.values()):
                     continue
-                if old and not waiting and not self.retaken(old):
+                if old and not waiting and not self.retaken(old, i["number"] in listed):
                     continue
+                parsed = cutshape.parse(i)
+                deps = parsed["deps"]
+                got = {}
+                if waiting and (previous := waits.dependency_numbers(old)):
+                    got = {d: self.dep_state(d, open_numbers, labelled) for d in deps}
+                    remaining = [d for d in previous if d in got and got[d] != "met"]
+                    if remaining != previous:
+                        old = waits.keep_dependencies(old, remaining)
+                        self.save(old, "dependency wait refreshed")
+                        if not remaining:
+                            self.store.set(str(i["number"]), "dead_deps", "")
                 if old and old["state"] == "waiting" and old.get("recheck") and not self.recheck_settled(old):
                     continue
                 take = (old.get("take") or 1) + 1 if old and old["state"] in END else (old or {}).get("take")
@@ -1073,7 +1106,6 @@ class Dispatcher:
                         self.store.set(str(i["number"]), "cutshape", digest)
                         log(i["number"], "not started: the issue text is not readable (%d problem%s)" % (len(errors), "" if len(errors) == 1 else "s"))
                     continue
-                parsed = cutshape.parse(i)
                 if parsed["worker"] not in ("coder", "researcher", "designer") or parsed["worker"] not in pools.types(self.cfg):
                     t = parsed["worker"]
                     if self.store.get_all(str(i["number"])).get("worker_queue") != t:
@@ -1084,9 +1116,8 @@ class Dispatcher:
                     continue
                 if rooms.get(parsed["worker"], 0) <= 0 and not waiting:
                     continue
-                deps = parsed["deps"]
                 if deps:
-                    got = {d: self.dep_state(d, open_numbers, labelled) for d in deps}
+                    got = got or {d: self.dep_state(d, open_numbers, labelled) for d in deps}
                     unmet = [d for d in deps if got[d] != "met"]
                     if unmet:
                         ret = [d for d in unmet if got[d] == "returned"]
@@ -1135,6 +1166,7 @@ class Dispatcher:
                                 "paths": parsed["paths"], "test": parsed["test"], "plan_dev": parsed["dev"]}
                         if take:
                             data["take"] = take
+                        data["takes"] = takes
                         if old and old.get("replans"):
                             data["replans"] = old["replans"]
                         if old and old.get("rechecks"):
@@ -1143,7 +1175,7 @@ class Dispatcher:
                         log(i["number"], line)
                     continue
                 if free and i["number"] in unlisted:
-                    seen = self.order_view(i["number"]) or {}
+                    seen = self.order_view(i["number"], fresh=True) or {}
                     free = seen.get("state") == "OPEN" and PAUSED not in {x.get("name") if isinstance(x, dict) else x for x in seen.get("labels") or []}
                 if not free:
                     if old.get("waiting") or old.get("file_wait") or old.get("wait_line"):
@@ -1200,10 +1232,12 @@ class Dispatcher:
 
     def dep_state(self, d, open_numbers, labelled):
         n = str(d)
+        j = self.store.get_job(n)
+        if j and j["state"] in ("merged", "superseded"):
+            return "met"
         if d in open_numbers:
             if self.store.get_all(n).get("close_reason"):
                 self.store.set(n, "close_reason", "")
-            j = self.store.get_job(n)
             if j and j["state"] in states.PROBLEM and d not in labelled:
                 return j["state"]
             return "not a factory job" if not j and d not in labelled else "live"
@@ -1520,7 +1554,8 @@ class Dispatcher:
             if counts is None:
                 log(j["issue"], "token counts of run %s unknown: left at 0" % run)
                 counts = {}
-            self.store.close_run(run, "done" if status == "done" else "error", **counts)
+            ended = r.get("finishedAt")
+            self.store.close_run(run, "done" if status == "done" else "error", at=ended if isinstance(ended, str) and ended else iso(self.now(), ms=True), **counts)
 
     def record_tokens(self, j, r):
         ti, to = r.get("inputTokens"), r.get("outputTokens")
@@ -2195,6 +2230,8 @@ class Dispatcher:
         if state == "returned" and j.get("replans", 0) >= MAX_REPLANS and clocks.klass("BLOCKED", blocked=reason) == "plan":
             state = "unsolvable"
             extra.update(commented=False, relabelled=False)
+        if state == "returned" and (self.work or {}).get("id"):
+            extra["returned_order"] = self.work["id"]
         self.to(j, state, "%s: %s" % (state, reason), reason=reason, sending=None, ended_at=ledger_store.now(), **extra)
 
     def senior(self, j, line, review):

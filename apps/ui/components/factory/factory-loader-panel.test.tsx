@@ -34,6 +34,29 @@ describe('FactoryLoader', () => {
         fileWait.jobs = fileWait.jobs.map(j => (j.issue === 332 ? { ...j, reason: 'waits for #331, same file a/b.py' } : j))
         expect(html(fileWait)).toContain('waits for #331, same file a/b.py')
         expect(html(fileWait)).not.toContain('waits on #331')
+        for (const state of ['merged', 'superseded'] as const) {
+            const legacy = sample()
+            legacy.jobs.find(j => j.issue === 331)!.state = state
+            const waiting = legacy.jobs.find(j => j.issue === 332)!
+            expect(waiting.waitingOn).toBeUndefined()
+            expect(html(legacy)).not.toContain('waits on #331')
+
+            waiting.dependsOn = [331, 999]
+            waiting.reason = 'waits on #331, dead #999 (closed as not planned)'
+            const deadWait = html(legacy)
+            expect(deadWait).toContain('waits on dead #999 (closed as not planned)')
+            expect(deadWait).not.toContain('waits on #331')
+
+            waiting.dependsOn.push(334)
+            waiting.reason = 'waits on #331, #334, dead #999 (closed as not planned)'
+            expect(html(legacy)).toContain('waits on #334, dead #999 (closed as not planned)')
+
+            waiting.dependsOn = [331]
+            waiting.reason = 'waits for #331, same file a/b.py'
+            expect(html(legacy)).toContain(waiting.reason)
+            waiting.reason = 'fact recheck'
+            expect(html(legacy)).toContain(waiting.reason)
+        }
         const s = sample()
         s.jobs = s.jobs.filter(j => j.state !== 'waiting' && j.state !== 'queued')
         expect(html(s)).toContain('Nothing queued or waiting')

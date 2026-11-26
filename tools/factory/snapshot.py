@@ -7,6 +7,7 @@ import digest
 import pools
 import states
 import store as ledger_store
+import waits
 
 RUNNING = states.RUNNING
 END = states.END
@@ -68,6 +69,8 @@ def _reason(j):
     state = j["state"]
     if state in END:
         text = j.get("reason")
+    elif state == "waiting" and j.get("file_wait"):
+        text = "waits for #%d, same file %s" % tuple(j["file_wait"])
     elif state == "waiting":
         text = j.get("wait_line") or ("waits on " + ", ".join("#%d" % d for d in j["waiting"]) if j.get("waiting") else j.get("wait_reason"))
     elif state in WAIT_STATES:
@@ -144,9 +147,17 @@ def _epics(store, kept, read_epic):
     return out
 
 
-def _job(store, cfg, names, j):
+def _job(store, cfg, names, j, completed):
     running = j["state"] in RUNNING
     parsed = cutshape.parse({"number": j["issue"], "body": j.get("body") or ""})
+    waiting_on = None
+    if j["state"] == "waiting":
+        previous = waits.dependency_numbers(j)
+        waiting_on = [n for n in previous if n not in completed and store.get_all(str(n)).get("close_reason") != "completed"]
+        if waiting_on != previous:
+            j = waits.keep_dependencies(j, waiting_on)
+        if not j.get("wait_line") and not waiting_on and not j.get("file_wait") and j.get("wait_reason") == "dependency":
+            j = dict(j, wait_reason=None)
     steps = None
     if running and j.get("fire_id") is not None:
         row = store.db.execute("SELECT steps FROM fires WHERE id=?", (j["fire_id"],)).fetchone()
@@ -171,6 +182,8 @@ def _job(store, cfg, names, j):
         "parent": parsed.get("parent"), "dependsOn": list(parsed.get("deps") or [])[:20],
         "reason": _reason(j), "history": history, "runs": runs,
     }
+    if waiting_on is not None:
+        job["waitingOn"] = waiting_on[:20]
     if "closed_seen" in store.get_all(str(j["issue"])):
         job["closedOutside"] = True
     if main:
@@ -333,6 +346,7 @@ def _run_stats(store, now):
 def build_snapshot(store, cfg, now, holds_active, beat=0, read_epic=None, planning=None, plan=None, machine=None):
     names = pools.names(cfg)
     all_jobs = store.jobs()
+    completed = {j["issue"] for j in all_jobs if j["state"] in ("merged", "superseded")}
     live = [j for j in all_jobs if j["state"] not in END]
     ended = sorted((j for j in all_jobs if j["state"] in END), key=lambda j: str(j.get("updated_at") or ""), reverse=True)
     kept = sorted((live + ended)[:MAX_JOBS], key=lambda j: int(j["issue"]))
@@ -353,7 +367,7 @@ def build_snapshot(store, cfg, now, holds_active, beat=0, read_epic=None, planni
             ended_today[j["state"]] += 1
     holds_list = [{"kind": holds_active["kind"][:40], "until": iso(holds_active["until"])}] if holds_active else []
     snap = {"version": 1, "madeAt": iso(now), "beat": beat, "repo": cfg["repo"],
-            "jobs": [_job(store, cfg, names, j) for j in kept], "holds": holds_list, "pools": pool_list,
+            "jobs": [_job(store, cfg, names, j, completed) for j in kept], "holds": holds_list, "pools": pool_list,
             "endedToday": ended_today, "epics": _epics(store, kept, read_epic),
             "digest": digest.build(store, cfg, now, plan=plan), "runStats": _run_stats(store, now)}
     if machine is not None:

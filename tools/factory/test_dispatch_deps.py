@@ -1,6 +1,7 @@
 import json, os, sys, unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import snapshot
+from unittest.mock import patch
 from test_dispatch import Base, D, ready
 
 
@@ -61,6 +62,34 @@ class DeadDeps(Base):
         self.w.open_numbers.discard(7)
         self.tick()
         self.assertEqual(self.state(), "building")
+
+    def test_only_unmet_dependencies_survive_in_wait_rows_and_loader_snapshots(self):
+        self.w.issues = [issue(5, "#7, #8, #9")]
+        self.w.open_numbers = {5, 7, 8, 9}
+        self.tick()
+        store = self.d.store
+
+        def row():
+            return next(j for j in snapshot.build_snapshot(store, self.cfg, self.w.clock, None)["jobs"] if j["issue"] == 5)
+
+        for scenario, wanted, line in (("all open", [7, 8, 9], "waits on #7 (not a factory job), #8 (not a factory job), #9 (not a factory job)"),
+                                       ("merged and closed", [9], "waits on #9 (not a factory job)"),
+                                       ("nothing left", [], None)):
+            with self.subTest(scenario=scenario):
+                if scenario == "merged and closed":
+                    store.put_job("7", "merged", {"issue": 7, "title": "Merged", "state": "merged"})
+                    self.w.open_numbers.remove(8)
+                    store.set("8", "close_reason", "completed")
+                    self.assertEqual((row().get("waitingOn"), row()["reason"]), (wanted, line))
+                elif scenario == "nothing left":
+                    self.w.open_numbers.remove(9)
+                    self.w.issue(5)["body"] += "\n**Run**\n```sh\npython3 -m unittest test_missing.py\n```\n"
+                with patch.object(D.plancheck, "tree", return_value=set()):
+                    self.tick()
+                job = self.data()
+                self.assertEqual((job["state"], job.get("waiting"), job.get("wait_line")), ("waiting", wanted, line))
+                got = row()
+                self.assertEqual((got["dependsOn"], got.get("waitingOn"), got["reason"]), ([7, 8, 9], wanted, line))
 
     def returned(self, n, replans):
         self.d = self.new()

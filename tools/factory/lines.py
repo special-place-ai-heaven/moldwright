@@ -166,7 +166,8 @@ class Lines:
         for d in self.lines.values():
             d.run_state, d.off_connections, d.work = state, off, None
             d.cfg["pool"] = self.pool(d)
-        self.lines[self.active].work = dict(self.work(), id=(self.order() or {}).get("id"))
+        order = self.order() or {}
+        self.lines[self.active].work = dict(self.work(), id=order.get("id"), asked_at=order.get("asked_at"))
 
     def throttle(self):
         saved = self.read("throttle", {})
@@ -295,10 +296,11 @@ class Lines:
     def fresh_return(self, order, job, kv):
         if job["state"] != "returned" or not job.get("relabelled") or kv.get("returned_closed_order") == order["id"]:
             return False
-        if job.get("reason") != self.lines[self.active].withdrawal_reason():
-            return False
+        line = self.lines[self.active]
+        if line.order_replan(job, order):
+            return True
         ended, asked = stamp(job.get("ended_at")), stamp(order.get("asked_at"))
-        return (ended is not None and asked is not None and ended < asked
+        return (job.get("reason") == line.withdrawal_reason() and ended is not None and asked is not None and ended < asked
                 and bool(cutshape.parse({"number": job["issue"], "body": job.get("body")})["deps"]))
 
     def learn_action(self, ask):
