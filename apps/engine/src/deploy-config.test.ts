@@ -21,7 +21,9 @@ function engines(text: string): [string, Service][] {
   return Object.entries(services(text)).filter(([, service]) => {
     const image = typeof service.image === 'string' && service.image.includes('moldwright-engine')
     const build = typeof service.build === 'object' && service.build?.dockerfile === 'apps/engine/Dockerfile'
-    return image || build
+    const path = typeof service.build === 'string' ? service.build.replace(/^\.\//, '').replace(/\/+$/, '') : ''
+    const short = path === 'apps/engine' || path.endsWith('/apps/engine')
+    return image || build || short
   })
 }
 
@@ -74,6 +76,19 @@ describe('deploy config', () => {
     expect(offenders(a)).toEqual(['e'])
     expect(offenders(b)).toEqual(['e'])
     expect(offenders(c)).toEqual([])
+  })
+
+  it('flags an engine service written with the short build form', () => {
+    const a = 'services:\n  e:\n    build: apps/engine\n    environment:\n      RERUN_API_KEY: ${K}\n'
+    const b = 'services:\n  e:\n    build: ./apps/engine/\n    environment:\n      RERUN_API_KEY: ${K}\n'
+    const c = 'services:\n  e:\n    build: ../../apps/engine\n    env_file: .env\n'
+    const d = 'services:\n  e:\n    build: apps/ui\n    environment:\n      RERUN_API_KEY: ${K}\n'
+    const e = 'services:\n  e:\n    build: apps/engine-tools\n    environment:\n      RERUN_API_KEY: ${K}\n'
+    expect(offenders(a)).toEqual(['e'])
+    expect(offenders(b)).toEqual(['e'])
+    expect(offenders(c)).toEqual(['e'])
+    expect(offenders(d)).toEqual([])
+    expect(offenders(e)).toEqual([])
   })
 
   it('runs apps/ui/Dockerfile as non-root user node', () => {
