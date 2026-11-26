@@ -94,6 +94,33 @@
         }
       ]
     },
+    "security": {
+      "role": "review",
+      "coworkers": [
+        {
+          "id": "71dfdea8-3482-4f3f-b091-ed4b16a69b99",
+          "name": "BRUCE",
+          "provider": "openrouter"
+        }
+      ]
+    },
+    "data": {
+      "optional": true,
+      "coworkers": [
+        {
+          "name": "CODD"
+        }
+      ]
+    },
+    "contracts": {
+      "role": "review",
+      "optional": true,
+      "coworkers": [
+        {
+          "name": "GRACE"
+        }
+      ]
+    },
     "planner": {
       "coworkers": [
         {
