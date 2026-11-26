@@ -95,7 +95,17 @@
         "idleShort": "{wait, select, project {No project} order {No order} done {All done} other {No work}}",
         "idleLong": "No work · {reason}",
         "idleSentence": "Running, nothing to work on: {reason}",
-        "wait": "{wait, select, project {no project chosen} order {no work order} done {the work order is done} other {{text}}}"
+        "wait": "{wait, select, project {no project chosen} order {no work order} done {the work order is done} other {{text}}}",
+        "clearQueue": "Clear queue",
+        "confirmClearQueueTitle": "{count, plural, one {Clear # queued job in {repo}?} other {Clear # queued jobs in {repo}?}}",
+        "confirmClearQueueBody": "Only the queued and waiting jobs listed here are cancelled and not picked up again. Jobs the list does not show stay queued. Running jobs, issues and history stay.",
+        "confirmClearQueue": "Clear queue",
+        "queueClearSent": "{count, plural, one {Clearing # job} other {Clearing # jobs}}",
+        "queueClearWaiting": "Waiting for the dispatcher to clear the queue of {repo}",
+        "queueClearReport": "Last clear in {repo}: {cleared} cleared, {kept} kept",
+        "queueClearRefusedProject": "Last clear in {repo} not taken: the factory is on another project",
+        "queueClearExpired": "Last clear in {repo} not taken: it reached the dispatcher too late. Try again",
+        "queueClearUnconfirmed": "The dispatcher did not confirm the clear in {repo}. Try again"
     },
     "orders": {
         "trigger": "Work order",

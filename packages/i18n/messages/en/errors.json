@@ -462,6 +462,7 @@
     "factoryWorkOrderActive": "{repo} already has a work order: cancel it first",
     "factoryWorkOrderNotFound": "This work order was not found or has ended",
     "factoryWorkOrderNotHalted": "Job #{issue} is not waiting for a retry or a skip",
+    "factoryQueueClearBusy": "A queue clear is still waiting for the dispatcher. Try again once it answers",
     "factoryProjectLinkInvalid": "Paste a GitHub link like https://github.com/owner/repo",
     "factoryProjectOwnerNotAllowed": "The factory only works on repositories of {owners}: use a repository of one of these owners",
     "factoryProjectQuotaUnset": "Set a project quota in Settings to add projects",

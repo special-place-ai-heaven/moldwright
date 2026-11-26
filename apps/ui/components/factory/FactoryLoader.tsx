@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { factoryStationNames, type FactoryJobState, type FactorySnapshot } from '@moldwright/contracts'
 import { JOB_STATE_VIEW } from './factory-state'
 import { loaderView } from './factory-loader'
+import { FactoryClearQueue } from './FactoryClearQueue'
 import { FactorySeatsPick } from './FactoryThrottle'
 import type { FactoryControlsState } from './use-factory-controls'
 
@@ -79,6 +80,7 @@ export function FactoryLoader({ snapshot, now: fixedNow, controls }: { snapshot:
             </Section>
 
             <Section title="Queue">
+                {controls && <FactoryClearQueue snapshot={snapshot} controls={controls} issues={[...v.queued, ...v.waiting].map(x => x.issue)} />}
                 {empty && <div className="text-sm text-muted-foreground">Nothing queued or waiting</div>}
                 {v.queued.map(q => (
                     <div key={q.issue} className="flex items-center gap-2 text-sm">

@@ -2,7 +2,7 @@
 
 import type { FactoryProjectLimits, FactorySnapshot } from '@moldwright/contracts'
 import { requireWorkspaceContext, requireWorkspaceId } from '@/app/api/_auth/ownership'
-import { actOnWorkOrder, cancelWorkOrder, createWorkOrder, readFactoryControls, setFactoryProjectLimits, setFactoryState, setFactoryThrottle, setProviderEnabled, type FactoryControlsView, type FactoryThrottleView, type FactoryWorkOrder, type WorkOrderAction, type WorkOrderInput } from '@/app/api/_services/factory-controls.service'
+import { actOnWorkOrder, cancelWorkOrder, clearFactoryQueue, createWorkOrder, readFactoryControls, setFactoryProjectLimits, setFactoryState, setFactoryThrottle, setProviderEnabled, type FactoryControlsView, type FactoryThrottleView, type FactoryWorkOrder, type WorkOrderAction, type WorkOrderInput } from '@/app/api/_services/factory-controls.service'
 import { addGithubProject, addPathProject, addRepoProject, listFactoryProjects, removeProject, retryProject, selectProject, type FactoryProject, type GithubAddOutcome, type PathOutcome, type SelectOutcome } from '@/app/api/_services/factory-projects.service'
 import { getFactorySnapshot } from '@/lib/factory/snapshot-store'
 import { failureOf } from '@/lib/i18n/action-error'
@@ -151,6 +151,15 @@ export async function actOnFactoryWorkOrderAction(id: string, action: WorkOrderA
         const { workspace, userId } = await requireWorkspaceContext()
         await actOnWorkOrder(workspace.id, userId, String(id), action, Number(issue))
         return { ok: true }
+    } catch (err) {
+        return failureOf(err)
+    }
+}
+
+export async function clearFactoryQueueAction(repo: string, issues: number[]): Promise<ActionResult<{ id: string; count: number }>> {
+    try {
+        const { workspace, userId } = await requireWorkspaceContext()
+        return { ok: true, ...(await clearFactoryQueue(workspace.id, userId, { repo: String(repo), issues: Array.isArray(issues) ? issues.map(Number) : [] })) }
     } catch (err) {
         return failureOf(err)
     }

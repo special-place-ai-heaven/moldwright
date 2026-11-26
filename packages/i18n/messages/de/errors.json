@@ -456,6 +456,7 @@
     "factoryWorkOrderActive": "{repo} hat schon einen Arbeitsauftrag: brich ihn zuerst ab",
     "factoryWorkOrderNotFound": "Dieser Arbeitsauftrag wurde nicht gefunden oder ist beendet",
     "factoryWorkOrderNotHalted": "Job #{issue} wartet nicht auf Wiederholen oder Überspringen",
+    "factoryQueueClearBusy": "Ein Leeren der Warteschlange wartet noch auf den Dispatcher. Versuche es erneut, sobald er antwortet",
     "factoryProjectLinkInvalid": "Füge einen GitHub-Link wie https://github.com/owner/repo ein",
     "factoryProjectOwnerNotAllowed": "Die Factory arbeitet nur mit Repositorys von {owners}: Nutze ein Repository eines dieser Eigentümer",
     "factoryProjectQuotaUnset": "Lege in den Einstellungen ein Projektkontingent fest, um Projekte hinzuzufügen",

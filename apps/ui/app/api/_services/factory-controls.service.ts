@@ -7,6 +7,8 @@ import {
     FACTORY_ORDER_KINDS,
     FACTORY_ORDER_TEXT_MAX,
     FACTORY_POOL_DEFAULT,
+    FACTORY_QUEUE_CLEAR_MAX,
+    FACTORY_QUEUE_CLEAR_WAIT_S,
     FACTORY_WIRE_ID_PATTERN,
     factoryControlStateSchema,
     factoryGhostCeiling,
@@ -25,10 +27,11 @@ import { createServiceRoleClient } from '@/supabase/serviceRole'
 import { selectMany, selectMaybeSingle } from '@/supabase/supabase-helpers'
 
 type ControlsInsert = Database['public']['Tables']['factory_controls']['Insert']
+type ControlsUpdate = Database['public']['Tables']['factory_controls']['Update']
 type OrderInsert = Database['public']['Tables']['factory_work_orders']['Insert']
 type OrderUpdate = Database['public']['Tables']['factory_work_orders']['Update']
 
-const CONTROLS_COLUMNS = ['state', 'state_by', 'state_at', 'providers_off', 'providers_by', 'providers_at', 'max_ghosts', 'stations', 'throttle_by', 'throttle_at', 'project_limits'] as const
+const CONTROLS_COLUMNS = ['state', 'state_by', 'state_at', 'providers_off', 'providers_by', 'providers_at', 'max_ghosts', 'stations', 'throttle_by', 'throttle_at', 'project_limits', 'queue_clear', 'queue_clear_by', 'queue_clear_at'] as const
 const ORDER_COLUMNS = ['id', 'repo', 'kind', 'issues', 'text', 'status', 'action', 'created_by', 'created_at', 'cancelled_by', 'cancelled_at'] as const
 const ORDERS_SHOWN = 20
 const STOPS: readonly FactoryControlState[] = ['DRAINING', 'STOPPED']
@@ -224,12 +227,47 @@ export async function actOnWorkOrder(workspaceId: number, userId: string, id: st
     if (error) throw new AppError('generic')
 }
 
+const validQueueIssues = (issues: unknown[]): issues is number[] =>
+    issues.length > 0 && issues.length <= FACTORY_QUEUE_CLEAR_MAX && new Set(issues).size === issues.length && issues.every(n => Number.isInteger(n) && (n as number) > 0)
+
+export async function clearFactoryQueue(workspaceId: number, userId: string, input: { repo: string; issues: number[] }, now = Date.now()): Promise<{ id: string; count: number }> {
+    await assertFactoryOwner(workspaceId, userId)
+    const issues = Array.isArray(input?.issues) ? input.issues : []
+    if (typeof input?.repo !== 'string' || !validQueueIssues(issues)) throw new AppError('factoryInputInvalid')
+    await assertActiveProject(workspaceId, input.repo)
+    const row = await controlsRow(workspaceId)
+    const pending = (row?.queue_clear as { id?: unknown } | null | undefined)?.id
+    if (typeof pending === 'string' && row?.queue_clear_at && now - Date.parse(row.queue_clear_at) < FACTORY_QUEUE_CLEAR_WAIT_S * 1000
+        && getFactorySnapshot(workspaceId)?.snapshot.queue_clear?.id !== pending) throw new AppError('factoryQueueClearBusy')
+    const id = randomUUID()
+    const ask = { queue_clear: { id, repo: input.repo, issues }, queue_clear_by: userId, queue_clear_at: wireTime(now) }
+    const table = createServiceRoleClient().from('factory_controls')
+    if (!row) {
+        const { error } = await table.insert<ControlsInsert>({ workspace_id: workspaceId, ...ask })
+        if (error?.code === '23505') throw new AppError('factoryQueueClearBusy')
+        if (error) throw new AppError('generic')
+        return { id, count: issues.length }
+    }
+    const update = table.update<ControlsUpdate>(ask).eq('workspace_id', workspaceId)
+    const { data, error } = await (row.queue_clear_at ? update.eq('queue_clear_at', row.queue_clear_at) : update.is('queue_clear_at', null)).select('workspace_id')
+    if (error) throw new AppError('generic')
+    if (!data?.length) throw new AppError('factoryQueueClearBusy')
+    return { id, count: issues.length }
+}
+
+function queueClearAnswer(row: ControlsRow | null | undefined): Pick<ControlsReportAnswer, 'queue_clear'> {
+    const ask = row?.queue_clear as { id?: unknown; repo?: unknown; issues?: unknown } | null | undefined
+    if (!row?.queue_clear_at || !ask || typeof ask.id !== 'string' || typeof ask.repo !== 'string' || !Array.isArray(ask.issues) || !validQueueIssues(ask.issues)) return {}
+    return { queue_clear: { id: ask.id, repo: ask.repo, issues: ask.issues, by: row.queue_clear_by ?? '', at: wireTime(row.queue_clear_at) } }
+}
+
 export type ControlsReportAnswer = {
     control?: { state: FactoryControlState; by: string; at: string }
     providers?: { off: string[]; by: string; at: string }
     throttle?: { max_ghosts: number; stations: Record<string, number>; by: string; at: string }
     work_order?: { id: string; repo: string; kind: FactoryOrderKind; issues: number[]; text: string; by: string; at: string } | { kind: 'none'; by: string; at: string }
     work_order_action?: { action: WorkOrderAction; order_id: string; issue: number; by: string; at: string }
+    queue_clear?: { id: string; repo: string; issues: number[]; by: string; at: string }
 }
 
 function orderAnswer(row: OrderRow | undefined): Pick<ControlsReportAnswer, 'work_order' | 'work_order_action'> {
@@ -250,6 +288,7 @@ export async function controlsReportAnswer(workspaceId: number): Promise<Control
         ...(state.success && row?.state_at ? { control: { state: state.data, by: row.state_by ?? '', at: wireTime(row.state_at) } } : {}),
         ...(row?.providers_at ? { providers: { off: row.providers_off, by: row.providers_by ?? '', at: wireTime(row.providers_at) } } : {}),
         ...(throttle && row?.throttle_at ? { throttle: { max_ghosts: throttle.maxGhosts, stations: throttle.stations, by: row.throttle_by ?? '', at: wireTime(row.throttle_at) } } : {}),
+        ...queueClearAnswer(row),
         ...(activeRepo ? orderAnswer((await ordersOf(workspaceId, activeRepo, 1))[0]) : {}),
     }
 }

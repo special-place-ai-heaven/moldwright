@@ -186,6 +186,12 @@ describe('factory snapshot digest', () => {
         expect(parsed.digest?.causes?.changes[1]).toEqual(changes[1])
     })
 
+    it('preserves an inconclusive zero-baseline change in a factory snapshot', () => {
+        const change = { ...changes[0], before: 0, after: 0, verdict: 'inconclusive' }
+        const parsed = factorySnapshotSchema.parse(withDigest({ ...digest(), causes: { groups: [], changes: [change] } }))
+        expect(parsed.digest?.causes?.changes).toEqual([change])
+    })
+
     it('accepts causes with nothing in them', () => {
         expect(ok({ ...digest(), causes: { groups: [], changes: [] } })).toBe(true)
     })

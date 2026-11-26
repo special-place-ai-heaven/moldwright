@@ -168,7 +168,7 @@ export const factoryDigestSchema = z.object({
             kind: z.enum(['repo', 'instructions']),
             before: z.number().min(0).nullable(),
             after: z.number().min(0).nullable(),
-            verdict: z.enum(['kept', 'revert', 'dropped']).nullable(),
+            verdict: z.enum(['kept', 'revert', 'dropped', 'inconclusive']).nullable(),
             revert: z.number().int().positive().nullable(),
         })).max(20),
     }).optional(),
@@ -232,6 +232,8 @@ export const FACTORY_CONNECTIONS_OFF_MAX = 50
 export const FACTORY_ORDER_KINDS = ['issue', 'all_issues', 'feature', 'bug'] as const
 export const FACTORY_ORDER_ISSUES_MAX = 200
 export const FACTORY_ORDER_TEXT_MAX = 4000
+export const FACTORY_QUEUE_CLEAR_MAX = 500
+export const FACTORY_QUEUE_CLEAR_WAIT_S = 180
 export const FACTORY_MAX_GHOSTS_FALLBACK = 32
 export const FACTORY_POOL_DEFAULT = 1
 export const FACTORY_SEATS_DEFAULT = 1
@@ -282,6 +284,14 @@ export const factoryWorkOrderReportSchema = z.object({
     wait: z.string().max(300).nullable(),
 })
 
+export const factoryQueueClearReportSchema = z.object({
+    id: z.string().max(64),
+    repo: z.string().max(201),
+    outcome: z.enum(['cleared', 'wrong_project', 'expired']).default('cleared'),
+    cleared: z.array(issueNumber).max(FACTORY_QUEUE_CLEAR_MAX),
+    kept: z.array(issueNumber).max(FACTORY_QUEUE_CLEAR_MAX),
+    at: wireText,
+})
 export const factorySnapshotSchema = z.object({
     version: z.literal(1),
     madeAt: isoTime,
@@ -302,6 +312,7 @@ export const factorySnapshotSchema = z.object({
     control: factoryControlSchema.optional().catch(undefined),
     providers: factoryProvidersSchema.optional().catch(undefined),
     work_order: factoryWorkOrderReportSchema.optional().catch(undefined),
+    queue_clear: factoryQueueClearReportSchema.optional().catch(undefined),
     throttle: factoryThrottleSchema.optional().catch(undefined),
 })
 

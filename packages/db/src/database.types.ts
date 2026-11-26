@@ -1199,6 +1199,9 @@ export type Database = {
           providers_at: string | null
           providers_by: string | null
           providers_off: string[]
+          queue_clear: Json | null
+          queue_clear_at: string | null
+          queue_clear_by: string | null
           state: string | null
           state_at: string | null
           state_by: string | null
@@ -1215,6 +1218,9 @@ export type Database = {
           providers_at?: string | null
           providers_by?: string | null
           providers_off?: string[]
+          queue_clear?: Json | null
+          queue_clear_at?: string | null
+          queue_clear_by?: string | null
           state?: string | null
           state_at?: string | null
           state_by?: string | null
@@ -1231,6 +1237,9 @@ export type Database = {
           providers_at?: string | null
           providers_by?: string | null
           providers_off?: string[]
+          queue_clear?: Json | null
+          queue_clear_at?: string | null
+          queue_clear_by?: string | null
           state?: string | null
           state_at?: string | null
           state_by?: string | null

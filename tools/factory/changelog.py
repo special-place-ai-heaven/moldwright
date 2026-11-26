@@ -24,4 +24,8 @@ def after(ended, live_at, now, n=N):
 def verdict(rate_before, rate_after):
     if rate_before is None or rate_after is None:
         return "revert"
-    return "kept" if rate_after < rate_before else "revert"
+    if rate_after < rate_before:
+        return "kept"
+    if rate_before == 0.0:
+        return "inconclusive"
+    return "revert"

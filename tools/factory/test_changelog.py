@@ -38,7 +38,7 @@ class TestChangelog(unittest.TestCase):
     def test_only_a_lower_rate_keeps_the_change(self):
         self.assertEqual(C.verdict(3.0, 1.0), "kept")
         self.assertEqual(C.verdict(3.0, 3.0), "revert")
-        self.assertEqual(C.verdict(0.0, 0.0), "revert")
+        self.assertEqual(C.verdict(0.0, 0.0), "inconclusive")
         self.assertEqual(C.verdict(1.0, 3.0), "revert")
         self.assertEqual(C.verdict(None, 0.0), "revert")
         self.assertEqual(C.verdict(2.0, None), "revert")

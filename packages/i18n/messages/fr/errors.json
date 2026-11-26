@@ -458,6 +458,7 @@
     "factoryWorkOrderActive": "{repo} a déjà un ordre de travail : annule-le d'abord",
     "factoryWorkOrderNotFound": "Cet ordre de travail est introuvable ou terminé",
     "factoryWorkOrderNotHalted": "La tâche #{issue} n'attend ni relance ni saut",
+    "factoryQueueClearBusy": "Un vidage de la file attend encore le répartiteur. Réessayez quand il aura répondu",
     "factoryProjectLinkInvalid": "Collez un lien GitHub comme https://github.com/owner/repo",
     "factoryProjectOwnerNotAllowed": "La factory ne travaille que sur les dépôts de {owners} : utilisez un dépôt de l'un de ces propriétaires",
     "factoryProjectQuotaUnset": "Définissez un quota de projets dans les Paramètres pour ajouter des projets",

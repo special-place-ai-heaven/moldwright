@@ -73,7 +73,17 @@
         "idleShort": "{wait, select, project {Sem projeto} order {Sem ordem} done {Tudo feito} other {Sem trabalho}}",
         "idleLong": "Sem trabalho · {reason}",
         "idleSentence": "Em execução, nada para fazer: {reason}",
-        "wait": "{wait, select, project {nenhum projeto escolhido} order {nenhuma ordem de trabalho} done {a ordem de trabalho terminou} other {{text}}}"
+        "wait": "{wait, select, project {nenhum projeto escolhido} order {nenhuma ordem de trabalho} done {a ordem de trabalho terminou} other {{text}}}",
+        "clearQueue": "Limpar fila",
+        "confirmClearQueueTitle": "{count, plural, one {Remover # trabalho da fila de {repo}?} other {Remover # trabalhos da fila de {repo}?}}",
+        "confirmClearQueueBody": "Só os trabalhos na fila e em espera listados aqui são cancelados e não são retomados. Trabalhos que a lista não mostra continuam na fila. Trabalhos em curso, issues e histórico permanecem.",
+        "confirmClearQueue": "Limpar fila",
+        "queueClearSent": "{count, plural, one {Removendo # trabalho} other {Removendo # trabalhos}}",
+        "queueClearWaiting": "Aguardando o despachante limpar a fila de {repo}",
+        "queueClearReport": "Última limpeza em {repo}: {cleared} removidos, {kept} mantidos",
+        "queueClearRefusedProject": "Última limpeza em {repo} não aplicada: a fábrica está em outro projeto",
+        "queueClearExpired": "Última limpeza em {repo} não aplicada: chegou tarde demais ao despachante. Tente novamente",
+        "queueClearUnconfirmed": "O despachante não confirmou a limpeza em {repo}. Tente novamente"
     },
     "orders": {
         "trigger": "Ordem de trabalho",

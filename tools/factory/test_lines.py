@@ -798,6 +798,39 @@ class OrderRules(Pair):
             line.order_issues([])
         self.assertEqual((first, views() - first), (3, 0))
 
+    def test_clearing_the_queue_cancels_only_pending_jobs_and_they_stay_out_of_the_next_intake(self):
+        for n in (6, 7, 8):
+            self.w.issues.append(issue(n, "N%d" % n))
+            self.w.open_numbers.add(n)
+        self.ready_order("all_issues", [5, 6, 7])
+        self.tick(3)
+        line = self.d.lines["o/r"]
+        five = line.store.get_job("5")
+        for n, state, extra in ((6, "queued", {}), (7, "waiting", {}), (8, "queued", {"sending": "build"})):
+            line.store.put_job(str(n), state, dict(five, issue=n, title="N%d" % n, state=state, run=None, agent=None, **dict({"sending": None}, **extra)))
+        self.answer["queue_clear"] = {"id": "qc-1", "repo": "o/r", "issues": [5, 6, 7, 8, 9], "by": "rob", "at": D.iso(self.w.clock)}
+        sends = len(self.w.sends)
+        self.tick(4)
+        self.assertEqual(self.order_jobs(), [(5, "building"), (6, "cancelled"), (7, "cancelled"), (8, "queued")])
+        self.assertEqual({k: self.w.reports[-1]["queue_clear"][k] for k in ("cleared", "kept")}, {"cleared": [6, 7], "kept": [5, 8, 9]})
+        self.assertEqual((self.w.reports[-1]["work_order"]["skipped"], len(self.w.sends) - sends), ([6, 7], 0))
+        self.assertEqual(len(self.lines_said("queue cleared in o/r")), 1)
+        report = lambda: {k: self.w.reports[-1]["queue_clear"][k] for k in ("id", "outcome", "cleared", "kept")}
+        self.assertEqual(report(), {"id": "qc-1", "outcome": "cleared", "cleared": [6, 7], "kept": [5, 8, 9]})
+        self.w.clock += 1
+        self.answer["queue_clear"] = {"id": "qc-2", "repo": "o/x", "issues": [8], "by": "rob", "at": D.iso(self.w.clock)}
+        self.tick(2)
+        self.assertEqual(report(), {"id": "qc-2", "outcome": "wrong_project", "cleared": [], "kept": []})
+        self.w.clock += 1
+        self.answer["queue_clear"] = {"id": "qc-3", "repo": "o/r", "issues": [8], "by": "rob", "at": D.iso(self.w.clock)}
+        self.w.clock += 91
+        self.tick(2)
+        self.assertEqual(report(), {"id": "qc-3", "outcome": "expired", "cleared": [], "kept": []})
+        jobs = self.order_jobs()
+        self.answer["queue_clear"] = {"id": "qc-4", "repo": "o/r", "issues": [8], "by": "rob", "at": D.iso(self.w.clock - 100)}
+        self.tick(2)
+        self.assertEqual((report()["id"], self.order_jobs()), ("qc-3", jobs))
+
 class Seats(unittest.TestCase):
     def test_the_pool_caps_all_stations_together_and_each_station_stays_within_its_seats(self):
         seats = {"code": 5, "LINUS": 6, "Boss": 2, "HOUSE": 1}

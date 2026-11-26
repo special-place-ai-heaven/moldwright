@@ -32,6 +32,7 @@ FIELD = re.compile(r"^(GROUP|WHY|CULPRIT|CHANGE):[ \t]*(.*)$")
 QUOTE = re.compile(r'"[^"\n]{8,}"|`[^`\n]{8,}`')
 ISSUE = re.compile(r"^#(\d+)$")
 REVERT = "revert"
+INCONCLUSIVE = "inconclusive"
 DROPPED = "dropped"
 INSTR_DROPPED = ("rejected", "refused", "unreadable")
 REVERT_TITLE = "Revert of #%d: it did not lower `%s`"

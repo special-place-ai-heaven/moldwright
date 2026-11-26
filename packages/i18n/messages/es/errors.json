@@ -458,6 +458,7 @@
     "factoryWorkOrderActive": "{repo} ya tiene una orden de trabajo: cancélala primero",
     "factoryWorkOrderNotFound": "Esta orden de trabajo no existe o ha terminado",
     "factoryWorkOrderNotHalted": "El trabajo #{issue} no espera un reintento ni un salto",
+    "factoryQueueClearBusy": "Un vaciado de la cola sigue esperando al despachador. Inténtalo de nuevo cuando responda",
     "factoryProjectLinkInvalid": "Pega un enlace de GitHub como https://github.com/owner/repo",
     "factoryProjectOwnerNotAllowed": "La factory solo trabaja con repositorios de {owners}: usa un repositorio de uno de estos propietarios",
     "factoryProjectQuotaUnset": "Define una cuota de proyectos en Ajustes para añadir proyectos",

@@ -84,6 +84,14 @@ class Measure(Base):
         self.assertIn("#42", issue["body"])
         self.assertEqual(self.change()["revert"], issue["number"])
 
+    def test_a_zero_baseline_is_inconclusive_and_files_no_revert(self):
+        self.setup_change(before=0.0)
+        self.later(20, 0)
+        self.tick(5)
+        self.assertEqual((self.change()["after"], self.change()["verdict"], self.change()["revert"]), (0.0, "inconclusive", None))
+        self.assertEqual(self.w.problems, [])
+        self.assertEqual(self.boss(), [])
+
     def test_twelve_beats_file_it_once(self):
         self.setup_change()
         self.later(20, 4)

@@ -812,6 +812,21 @@ class Dispatcher:
             if j["state"] not in END and j["state"] not in RUNNING and not j.get("sending"):
                 self.cancel_job(j)
 
+    def clear_pending(self, issues):
+        cleared, kept = [], []
+        for n in issues:
+            j = self.store.get_job(str(n))
+            if not j or j["state"] not in ("waiting", "queued") or j.get("sending"):
+                kept.append(n)
+                continue
+            try:
+                self.to(j, "cancelled", "cancelled: cleared from the queue by the owner", reason="cleared by the owner", sending=None,
+                        relabelled=False, ended_at=ledger_store.now())
+            except Exception as e:
+                log(n, "clear: not cancelled: %s" % type(e).__name__)
+            (cleared if (self.store.get_job(str(n)) or {}).get("state") == "cancelled" else kept).append(n)
+        return cleared, kept
+
     def stop_running(self):
         for j in self.jobs():
             if j["state"] not in RUNNING or not j.get("run"):
