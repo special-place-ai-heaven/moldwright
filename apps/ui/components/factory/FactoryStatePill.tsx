@@ -29,7 +29,10 @@ export function FactoryStatePill({ snapshot, controls, now, onProjects, onChoose
     const reason = waitText === null ? '' : t('wait', { wait: wait ?? 'other', text: waitText })
     const action = wait === 'project' ? { label: tProjects('heading'), run: onProjects } : wait === 'order' || wait === 'done' ? { label: tOrders('triggerAsk'), run: onChooseWork } : wait === 'other' ? { label: tOrders('trigger'), run: onChooseWork } : null
 
-    const pending = asked !== null && asked !== reported && !(asked === 'DRAINING' && reported === 'STOPPED')
+    const askedAt = controls.view?.stateAt
+    const appliedAt = snapshot.control?.at
+    const alreadyApplied = askedAt && appliedAt && Date.parse(askedAt) <= Date.parse(appliedAt)
+    const pending = asked !== null && asked !== reported && !alreadyApplied && !(asked === 'DRAINING' && reported === 'STOPPED')
     const short = wait ? t('idleShort', { wait }) : hold ? t('holdShort', { kind: hold.kind }) : t('state', { state: reported })
     const long = pending ? t('asked', { state: asked }) : wait ? t('idleLong', { reason }) : hold ? t('holdLong', { kind: hold.kind, seconds: Math.ceil((Date.parse(hold.until) - now) / 1000) }) : short
     const sentence = wait

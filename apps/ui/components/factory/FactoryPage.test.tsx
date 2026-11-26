@@ -35,7 +35,7 @@ const memberControls: FactoryControlsView = {
 vi.mock('@/app/api/_actions/factory.actions', () => ({
     readFactorySnapshotAction: () => Promise.resolve(mocks.answer),
     listFactoryProjectsAction: () => Promise.resolve({ ok: true, projects: [], isOwner: false }),
-    readFactoryControlsAction: () => Promise.resolve({ ok: true, controls: structuredClone(mocks.controls ?? memberControls) }),
+    readFactoryControlsAction: vi.fn(async () => ({ ok: true, controls: structuredClone(mocks.controls ?? memberControls) })),
     createFactoryWorkOrderAction: mocks.createOrder,
     setFactoryStateAction: mocks.setState,
     setFactoryPoolAction: vi.fn(),
@@ -57,6 +57,7 @@ vi.mock('@/stores/board.store', () => ({
 vi.mock('@/supabase/session/SessionProvider', () => ({ useSession: () => ({ workspace: mocks.workspace }) }))
 
 import { toast } from 'sonner'
+import { readFactoryControlsAction } from '@/app/api/_actions/factory.actions'
 import { FACTORY_OVERLAY_BELOW, SIDE_PANEL_GAP, loadSidePanelWidth } from '@/lib/side-panel-width'
 import { FactoryPage } from './FactoryPage'
 
@@ -185,6 +186,28 @@ describe('factory page', () => {
             await act(async () => { vi.advanceTimersByTime(30_000) })
             await flush()
             expect(pill().dataset.statePill).toBe('STOPPED')
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    it('keeps the newer reported stop visible while a controls refresh is pending or fails', async () => {
+        vi.useFakeTimers({ toFake: ['setInterval'] })
+        try {
+            const base = snapshotWith([])
+            const report = (state: string, at: number) => ({ ...base, snapshot: { ...base.snapshot, control: { state, at: iso(at), by: 'owner' } } })
+            mocks.answer = report('RUNNING', NOW - 60_000)
+            mocks.controls = { ...memberControls, state: 'RUNNING', stateAt: iso(NOW - 60_000) }
+            await mount()
+            let fail!: () => void
+            vi.mocked(readFactoryControlsAction).mockImplementationOnce(() => new Promise((_, reject) => { fail = () => reject(new Error('offline')) }))
+            mocks.answer = report('STOPPED', NOW)
+            await act(async () => { vi.advanceTimersByTime(30_000) })
+            const pill = () => host.querySelector<HTMLElement>('[data-state-pill]')!
+            expect(pill().dataset.statePill).toBe('STOPPED')
+            await act(async () => { fail() })
+            expect(pill().dataset.statePill).toBe('STOPPED')
+            expect(pill().querySelector('.animate-pulse')).toBeNull()
         } finally {
             vi.useRealTimers()
         }
