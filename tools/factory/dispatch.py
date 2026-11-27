@@ -1,4 +1,4 @@
-import argparse, datetime, fnmatch, hashlib, json, os, re, signal, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import argparse, datetime, fnmatch, hashlib, json, os, re, secrets, signal, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 import acceptance
 import affinity
@@ -33,6 +33,7 @@ import planning
 import pools
 import problems
 import proof
+import reviewnote
 import refresh
 import registry
 import renewal
@@ -311,7 +312,10 @@ def evidence_brief(asks):
     ]
 
 
-def review_brief(j, pr, head):
+def review_brief(j, pr, head, repo=None):
+    asks = proof.change_asks(j.get("body"))
+    attempt = j.get("review_note_attempt")
+    adopt = asks and attempt and repo and re.fullmatch(reviewnote.REPO, repo) and re.fullmatch(reviewnote.HEAD, head)
     return "\n".join([
         'One review, sent by the dispatcher and not by Boss: pull request #%s of %s, for job #%s ("%s"), at commit %s. You work alone: call no other coworker and send no question to Rob.' % (pr, where(j), j["issue"], j["title"], head[:7]),
         '',
@@ -326,7 +330,10 @@ def review_brief(j, pr, head):
         *([WEB_GUIDE_REVIEW, ''] if ui_job(j) else []),
         'When the pull request body has a `## Tests adapted` section, judge every test file listed there: it may change only what the change of the issue requires. An assertion weakened or removed without that need is wrong behaviour let through, and a REJECT.',
         '',
-        *evidence_brief(proof.change_asks(j.get("body"))),
+        *evidence_brief(asks),
+        *(['Instead of repeating the evidence in the answer, you may adopt your own just-posted review note with all the EVIDENCE lines. '
+           'When posting that note with `/data/tools/bin/review %s %s ACCEPT`, use `--sha %s --attempt %s` along with your `--as` and `--note`.' % (repo, pr, head, attempt),
+           'This adds `%s` to the posted body. Copy the single `ADOPT REVIEW NOTE:` line from the tool as plain text immediately above your explicit final ACCEPT verdict. Never adopt another review or reuse a line from a prior attempt.' % reviewnote.attempt_line(attempt, head), ''] if adopt else []),
         'When the diff is right and the issue is wrong (its text, its Files or its Run block), the last line is `VERDICT: REJECT (plan) @<first 7 characters>: <one sentence>`.',
         '',
         'On GitHub write coworker names without the at-sign.',
@@ -1445,6 +1452,8 @@ class Dispatcher:
             return
         self.store.fired(j["fire_id"], r["runId"])
         j.update(run=r["runId"], sending=None)
+        if state == "reviewing" and j.get("review_note_attempt"):
+            j["review_note_run"] = r["runId"]
         j.pop("handover", None)
         self.save(j, "sent " + step)
         log(j["issue"], "%s -> %s (run %s)%s" % (step, self.names.get(agent, agent[:8]), r["runId"],
@@ -1455,7 +1464,7 @@ class Dispatcher:
         if j["state"] == "building":
             return first_brief(j)
         if j["state"] == "reviewing":
-            return review_brief(j, j["pr"], j["head"])
+            return review_brief(j, j["pr"], j["head"], self.repo)
         if j["state"] == "proving":
             return proof_brief(j, j["pr"], j["head"], j["asks"])
         return (senior_brief if j.get("level") and not j.get("same_round") else fix_brief)(j, j["pr"], j["review"])
@@ -1484,7 +1493,7 @@ class Dispatcher:
         self.store.abandon(j["fire_id"], "send interrupted before run id")
         return self.transient(j, "send interrupted before run id")
 
-    def finished_run(self, j):
+    def finished_run(self, j, receipt=None):
         if j.get("run") is None and j.get("sending"):
             return self.recover_sending(j)
         r = self.account("get_run", {"agentId": j["agent"], "runId": j["run"]})
@@ -1497,6 +1506,8 @@ class Dispatcher:
         self.store.close_run(j["run"], {"done": "done", "cancelled": "cancelled"}.get(r.get("status"), "error"),
                              at=ended if isinstance(ended, str) and ended else None, **self.kept_tokens(j["run"]))
         if r.get("status") == "done":
+            if receipt is not None:
+                receipt.update(r)
             self.strike(j, True)
             j["attempt"] = 1
             g = r.get("goal")
@@ -1626,7 +1637,7 @@ class Dispatcher:
             return None
         log(j["issue"], why + "; sending again")
         j["attempt"] = 2
-        self.send(j, j["agent"], j["sending_step"] + " again", self.message(j), j["state"], j.get("copy", 1))
+        self.send_station(j, j["agent"], j["sending_step"] + " again", j["state"], j.get("copy", 1))
         return None
 
     def clock_check(self, j, r):
@@ -1675,7 +1686,32 @@ class Dispatcher:
 
     def start(self, j, agent, step, state, copy=1, **kw):
         j.update(kw, sending_step=step, attempt=j.pop("retry_attempt", 1))
+        self.send_station(j, agent, step, state, copy)
+
+    def send_station(self, j, agent, step, state, copy):
+        if state == "reviewing":
+            j.update(review_note_attempt=secrets.token_hex(16) if proof.change_asks(j.get("body")) else None, review_note_run=None)
         self.send(j, agent, step, self.message(dict(j, state=state)), state, copy)
+
+    def adopted_review_evidence(self, j, run, out, count):
+        attempt = j.get("review_note_attempt")
+        if (not attempt or not j.get("run") or j.get("agent") != j.get("reviewer")
+                or j["run"] != j.get("review_note_run") or j["run"] != run.get("runId")):
+            return 0
+        ref = reviewnote.adopted(out, self.repo, j["pr"], j["head"])
+        if not ref:
+            return 0
+        cid, digest = ref
+        try:
+            note = json.loads(self.gh(["api", "repos/%s/issues/comments/%s" % (self.repo, cid), "--method", "GET"]))
+            reviewer = self.names.get(j["reviewer"], "").upper()
+            body = reviewnote.checked_body(note, self.repo, j["pr"], j["head"], cid, digest, reviewer, attempt, j["intent_at"], run)
+            if not body:
+                return 0
+            head = json.loads(self.gh(["pr", "view", str(j["pr"]), "-R", self.repo, "--json", "headRefOid"]))
+            return proof.evidence(body, count) if head.get("headRefOid") == j["head"] else 0
+        except (Error, AttributeError, KeyError, TypeError, ValueError):
+            return 0
 
     def recheck_tries(self):
         r = (self.cfg.get("planning") or {}).get("recheck")
@@ -1893,7 +1929,8 @@ class Dispatcher:
             r = got[0]
             self.start(j, r, "review %d of #%s at %s" % (j["round"], j["pr"], head[:7]), "reviewing", copy=got[1], reviewer=r, head=head)
         elif st == "reviewing":
-            out = self.finished_run(j)
+            run = {}
+            out = self.finished_run(j, run)
             if out is None:
                 return
             verdict = final_line(out, ("VERDICT:",)) or ""
@@ -1906,10 +1943,13 @@ class Dispatcher:
             asks = proof.change_asks(j.get("body"))
             got = proof.evidence(out, len(asks))
             if re.match(r"VERDICT:\s*ACCEPT", verdict) and not stale and got < len(asks):
-                why = "accept with %d of %d evidence lines" % (got, len(asks))
-                if j.get("evidence_asked"):
-                    return self.end(j, "blocked", "review without evidence twice: " + why)
-                return self.to(j, "review_wait", why + ": asked again", evidence_asked=1)
+                got = max(got, self.adopted_review_evidence(j, run, out, len(asks)))
+                if got < len(asks):
+                    why = "accept with %d of %d evidence lines" % (got, len(asks))
+                    if j.get("evidence_asked"):
+                        return self.end(j, "blocked", "review without evidence twice: " + why)
+                    return self.to(j, "review_wait", why + ": asked again", evidence_asked=1)
+                log(j["issue"], "adopted review note: %d/%d evidence lines" % (got, len(asks)))
             accept = bool(re.match(r"VERDICT:\s*ACCEPT", verdict)) and not stale
             first = j.get("first_accept") or {}
             second = accept and first.get("head") == j["head"] and first.get("by") != j.get("reviewer")

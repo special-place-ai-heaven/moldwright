@@ -3,6 +3,7 @@ import fnmatch, json, os, re, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cutshape
 import factory as F
+import reviewnote
 
 GH = F.GH
 TESTF = cutshape.TESTF
@@ -505,7 +506,7 @@ NOTE_MAX = 60000
 
 def review(a):
     if len(a) < 3 or a[2] not in ("ACCEPT", "REJECT") or "--as" not in a or "--note" not in a:
-        print("usage: review <repo> <PR> ACCEPT|REJECT --as <NAME> --note '<text>' [--sha <head commit you read>]")
+        print("usage: review <repo> <PR> ACCEPT|REJECT --as <NAME> --note '<text>' [--sha <head commit you read>] [--attempt <review attempt>]")
         return 2
     full, n = F.repo_full(a[0]), a[1].lstrip("#")
     name = a[a.index("--as") + 1].upper()
@@ -519,17 +520,38 @@ def review(a):
         if not re.fullmatch(r"[0-9a-f]{7,40}", read):
             print("--sha must be the 7 to 40 hex characters of the head commit you read")
             return 2
+    attempt = None
+    if "--attempt" in a[3::2]:
+        attempt = next((value for flag, value in zip(a[3::2], a[4::2]) if flag == "--attempt"), "")
+        if (a[2] != "ACCEPT" or not re.fullmatch(reviewnote.ATTEMPT, attempt)
+                or not re.fullmatch(reviewnote.HEAD, read or "") or not re.fullmatch(r"[1-9][0-9]*", n)):
+            print("--attempt requires ACCEPT, a valid PR number, the attempt token and the full head SHA")
+            return 2
     pr = gh_json("repos/%s/pulls/%s" % (full, n))
-    if read and not pr["head"]["sha"].startswith(read):
-        print("REFUSED: PR head is now %s, you read %s. Read the new head and review again. Nothing posted." % (pr["head"]["sha"][:8], read[:8]))
+    head = pr.get("head") if isinstance(pr, dict) else None
+    sha = head.get("sha") if isinstance(head, dict) else None
+    if not isinstance(sha, str) or not re.fullmatch(reviewnote.HEAD, sha):
+        print("REFUSED: could not read the full PR head. Nothing posted.")
         return 2
-    s8 = pr["head"]["sha"][:8]
+    if read and (sha != read if attempt else not sha.startswith(read)):
+        print("REFUSED: PR head is now %s, you read %s. Read the new head and review again. Nothing posted." % (sha[:8], read[:8]))
+        return 2
+    s8 = sha[:8]
     body = "Review %s @%s: %s %s @%s: %s" % (a[2], s8, name, a[2], s8, note)
+    if attempt is not None:
+        body = body.rstrip() + "\n" + reviewnote.attempt_line(attempt, sha)
     r = subprocess.run([GH, "pr", "comment", n, "-R", full, "--body", body], capture_output=True, text=True)
     if r.returncode:
         print("review not posted: " + (r.stderr or r.stdout)[-200:])
         return 1
-    print("POSTED " + body[:160] + " | " + r.stdout.strip())
+    url = r.stdout.strip()
+    print("POSTED " + body[:160] + " | " + url)
+    if attempt is not None:
+        ref = reviewnote.reference(full, n, sha, body, url)
+        if ref is None:
+            print("review note was posted but its canonical comment URL could not be read; use inline evidence instead")
+        else:
+            print(ref)
     return 0
 
 
