@@ -11,6 +11,11 @@ def issue(n):
 
 
 class Copies(unittest.TestCase):
+    def test_the_proof_brief_lets_an_adapted_test_outside_files_through(self):
+        b = D.proof_brief({"issue": 5, "title": "T", "pr": 1, "review": "r"}, 1, "abcdef1234", ["x"])
+        self.assertIn("so it is never a NOT MET (plan) for that reason", b)
+        self.assertIn("neither in Files nor listed under `## Tests adapted`", b)
+
     def make(self, runs, issues, extra=()):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
