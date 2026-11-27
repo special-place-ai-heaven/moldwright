@@ -47,7 +47,7 @@ const { SKILL_STYLE } = await import('./style.js')
 const { insertSkillProposal, getSkillProposal, transitionSkillProposal } = await import('../db/repos/skill-proposals.js')
 const { skillsDir, skillDir, connectionsDir } = await import('../config/paths.js')
 const { rm } = await import('node:fs/promises')
-const { DEFAULT_CONNECTION_MODELS, CONNECTION_TOKEN_KEY, agentConfigSchema } = await import('@moldwright/contracts')
+const { DEFAULT_CONNECTION_MODELS, CONNECTION_TOKEN_KEY, RERUN_CONNECTION_ID, RERUN_MODEL, agentConfigSchema } = await import('@moldwright/contracts')
 const { createConnection, ensureMoldwrightConnection } = await import('../connections/store.js')
 const { resolveConfiguredModel } = await import('../agents/availability.js')
 
@@ -146,7 +146,13 @@ describe('the model the skill is written with', () => {
         return { id, config, soul: '', install: '', env: {}, resolved: await resolveConfiguredModel(config) } as any
     }
 
-    function subscription(provider: 'claude' | 'codex', token = 'token') {
+    async function rerunPinnedAgent() {
+        await ensureMoldwrightConnection()
+        const config = agentConfigSchema.parse({ name: 'applier', connectionId: RERUN_CONNECTION_ID, provider: 'rerun', model: RERUN_MODEL })
+        return { id, config, soul: '', install: '', env: {}, resolved: await resolveConfiguredModel(config) } as any
+    }
+
+    function subscription(provider: 'claude' | 'codex' | 'openai' | 'openrouter', token = 'token') {
         return createConnection({ name: provider, provider, models: DEFAULT_CONNECTION_MODELS[provider], extraModels: [], keys: token ? { [CONNECTION_TOKEN_KEY[provider]!]: token } : {} })
     }
 
@@ -206,6 +212,31 @@ describe('the model the skill is written with', () => {
 
         expect(calls.writtenBy[0]).toBe(agent.resolved)
         expect(calls.cliAuth).toEqual([{ provider: 'rerun', connection: agent.resolved.connection.id }])
+    })
+
+    it.each(['claude', 'openai', 'openrouter'] as const)('writes a legacy %s proposal with no connection id on that provider when the agent is pinned to Rerun', async provider => {
+        const agent = await rerunPinnedAgent()
+        const connection = await subscription(provider)
+        const model = DEFAULT_CONNECTION_MODELS[provider][0]
+        const row = await accepted({ mode: 'create', slug: null, title: `Legacy ${provider}` }, { connectionId: null, provider, model })
+
+        await applySkillProposal(agent, row)
+
+        expect(calls.writtenBy[0]).toMatchObject({ provider, model })
+        expect(calls.writtenBy[0].connection.id).toBe(connection.id)
+        expect(calls.cliAuth).toEqual([{ provider, connection: connection.id }])
+    })
+
+    it("keeps the agent's own connection for a legacy proposal of the same provider", async () => {
+        await subscription('claude')
+        const own = await subscription('claude')
+        const config = agentConfigSchema.parse({ name: 'applier', connectionId: own.id, provider: 'claude', model: 'claude-opus-5-5' })
+        const agent = { id, config, soul: '', install: '', env: {}, resolved: await resolveConfiguredModel(config) } as any
+        const row = await accepted({ mode: 'create', slug: null, title: 'Legacy own' }, { connectionId: null, provider: 'claude', model: 'claude-opus-5-5' })
+
+        await applySkillProposal(agent, row)
+
+        expect(calls.writtenBy[0].connection.id).toBe(own.id)
     })
 })
 

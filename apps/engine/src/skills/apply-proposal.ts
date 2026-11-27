@@ -1,7 +1,9 @@
 import { z } from 'zod'
-import { connectorSkillReadOnlyError } from '@moldwright/contracts'
+import { connectorSkillReadOnlyError, type Provider } from '@moldwright/contracts'
 import { modelFor } from '../agents/providers.js'
 import { isUsable, resolveRunModel } from '../agents/availability.js'
+import { allowedModel } from '../connections/plan.js'
+import { connectionsOfProvider } from '../connections/resolve.js'
 import { ensureCliAuth } from '../connections/cli-auth.js'
 import { syncCodexAuth } from '../connections/codex-auth.js'
 import { generateStructured } from '../agents/structured.js'
@@ -54,9 +56,17 @@ async function draft(agent: LoadedAgent, row: SkillProposalRow, abortSignal: Abo
     return { ...output, name: editing ? editing.name : output.name, slug }
 }
 
+async function proposalConnectionId(agent: LoadedAgent, provider: Provider, model: string): Promise<string | undefined> {
+    const asked = allowedModel(provider, model)
+    const current = agent.resolved.connection
+    if (current?.config.provider === provider && isUsable(current, asked)) return current.id
+    return (await connectionsOfProvider(provider)).find(connection => isUsable(connection, asked))?.id
+}
+
 async function agentForProposal(agent: LoadedAgent, row: SkillProposalRow): Promise<LoadedAgent> {
     if (!row.provider || !row.model) return agent
-    const resolved = await resolveRunModel(agent, { connectionId: row.connectionId ?? undefined, provider: row.provider, model: row.model })
+    const connectionId = row.connectionId ?? (await proposalConnectionId(agent, row.provider, row.model))
+    const resolved = await resolveRunModel(agent, { connectionId, provider: row.provider, model: row.model })
     if (resolved.provider !== row.provider || !isUsable(resolved.connection, resolved.model)) return agent
     return { ...agent, resolved }
 }
